@@ -1,21 +1,37 @@
-require('dotenv').config();
+// ── Resolve data directory BEFORE loading .env ────────────
+const { DATA_DIR, DB_PATH, ENV_PATH, CERTS_DIR, UPLOADS_DIR } = require('./src/paths');
+
+// Bootstrap .env into the data directory if it doesn't exist yet
+const fs = require('fs');
+const path = require('path');
+if (!fs.existsSync(ENV_PATH)) {
+  const example = path.join(__dirname, '.env.example');
+  if (fs.existsSync(example)) {
+    fs.copyFileSync(example, ENV_PATH);
+    console.log(`📄 Created .env in ${DATA_DIR} from template`);
+  } else {
+    // Write a minimal .env so dotenv doesn't fail
+    fs.writeFileSync(ENV_PATH, 'JWT_SECRET=change-me-to-something-random-and-long\n');
+  }
+}
+
+require('dotenv').config({ path: ENV_PATH });
 const express = require('express');
 const { createServer } = require('http');
 const { createServer: createHttpsServer } = require('https');
 const { Server } = require('socket.io');
-const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const multer = require('multer');
 
+console.log(`📂 Data directory: ${DATA_DIR}`);
+
 // ── Auto-generate JWT secret (MUST happen before loading auth module) ──
-const envPath = path.join(__dirname, '.env');
 if (process.env.JWT_SECRET === 'change-me-to-something-random-and-long' || !process.env.JWT_SECRET) {
   const generated = crypto.randomBytes(48).toString('base64');
-  let envContent = fs.readFileSync(envPath, 'utf-8');
+  let envContent = fs.readFileSync(ENV_PATH, 'utf-8');
   envContent = envContent.replace(/JWT_SECRET=.*/, `JWT_SECRET=${generated}`);
-  fs.writeFileSync(envPath, envContent);
+  fs.writeFileSync(ENV_PATH, envContent);
   process.env.JWT_SECRET = generated;
   console.log('🔑 Auto-generated strong JWT_SECRET (saved to .env)');
 }
@@ -60,9 +76,14 @@ app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: '1h',           // browser caching
 }));
 
+// ── Serve uploads from external data directory ──────────
+app.use('/uploads', express.static(UPLOADS_DIR, {
+  dotfiles: 'deny',
+  maxAge: '1h',
+}));
+
 // ── File uploads (images, max 5 MB) ─────────────────────
-const uploadDir = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const uploadDir = UPLOADS_DIR;
 
 const uploadStorage = multer.diskStorage({
   destination: uploadDir,
@@ -171,13 +192,32 @@ app.use((err, req, res, _next) => {
 
 // Create HTTP or HTTPS server
 let server;
-const useSSL = process.env.SSL_CERT_PATH && process.env.SSL_KEY_PATH;
+
+// Resolve SSL paths: if set in .env resolve relative to DATA_DIR, otherwise auto-detect
+let sslCert = process.env.SSL_CERT_PATH;
+let sslKey  = process.env.SSL_KEY_PATH;
+
+// If not explicitly configured, check if the startup scripts generated certs
+if (!sslCert && !sslKey) {
+  const autoCert = path.join(CERTS_DIR, 'cert.pem');
+  const autoKey  = path.join(CERTS_DIR, 'key.pem');
+  if (fs.existsSync(autoCert) && fs.existsSync(autoKey)) {
+    sslCert = autoCert;
+    sslKey  = autoKey;
+  }
+} else {
+  // Resolve relative paths against the data directory
+  if (sslCert && !path.isAbsolute(sslCert)) sslCert = path.resolve(DATA_DIR, sslCert);
+  if (sslKey  && !path.isAbsolute(sslKey))  sslKey  = path.resolve(DATA_DIR, sslKey);
+}
+
+const useSSL = sslCert && sslKey;
 
 if (useSSL) {
   try {
     const sslOptions = {
-      cert: fs.readFileSync(process.env.SSL_CERT_PATH),
-      key: fs.readFileSync(process.env.SSL_KEY_PATH)
+      cert: fs.readFileSync(sslCert),
+      key: fs.readFileSync(sslKey)
     };
     server = createHttpsServer(sslOptions, app);
     console.log('🔒 HTTPS enabled');
@@ -248,7 +288,7 @@ function runAutoCleanup() {
 
     // 2. If total DB size exceeds maxSizeMb, trim oldest messages
     if (maxSizeMb > 0) {
-      const dbPath = require('path').join(__dirname, 'haven.db');
+      const dbPath = DB_PATH;
       const stats = require('fs').statSync(dbPath);
       const sizeMb = stats.size / (1024 * 1024);
       if (sizeMb > maxSizeMb) {
@@ -269,7 +309,7 @@ function runAutoCleanup() {
 
     // Also clean up old uploaded files if age cleanup is set
     if (maxAgeDays > 0) {
-      const uploadsDir = require('path').join(__dirname, 'public', 'uploads');
+      const uploadsDir = UPLOADS_DIR;
       if (require('fs').existsSync(uploadsDir)) {
         const cutoff = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000);
         const files = require('fs').readdirSync(uploadsDir);

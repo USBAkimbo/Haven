@@ -6,6 +6,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Haven uses [Sema
 
 ---
 
+## [1.1.0] — 2026-02-11
+
+### 🔒 Data Isolation
+
+All user data now lives **outside** the Haven code directory, making it physically impossible to accidentally commit or share personal data.
+
+### Changed
+- **Database, .env, certs, and uploads** are now stored in:
+  - **Windows:** `%APPDATA%\Haven\`
+  - **Linux / macOS:** `~/.haven/`
+- **SSL certificates are auto-detected** — if certs exist in the data directory, HTTPS enables automatically without needing to edit `.env`.
+- **Start Haven.bat** and **start.sh** generate certs and bootstrap `.env` in the external data directory.
+- **Automatic one-time migration** — existing data in the old project-directory locations is moved to the new data directory on first launch.
+
+### Added
+- New `src/paths.js` module — single source of truth for all data directory paths.
+- `HAVEN_DATA_DIR` environment variable — override where data is stored.
+
+### Updated
+- README.md, GUIDE.md, and .env.example updated to reflect new data locations.
+
+---
+
 ## [1.0.0] — 2026-02-10
 
 ### 🎉 First Public Release

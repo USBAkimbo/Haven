@@ -7,6 +7,10 @@ echo       HAVEN - Private Chat Server
 echo  ========================================
 echo.
 
+:: ── Data directory (%APPDATA%\Haven) ──────────────────────
+set "HAVEN_DATA=%APPDATA%\Haven"
+if not exist "%HAVEN_DATA%" mkdir "%HAVEN_DATA%"
+
 :: Kill any existing Haven server on port 3000
 echo  [*] Checking for existing server...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3000" ^| findstr "LISTENING"') do (
@@ -36,16 +40,32 @@ if not exist "%~dp0node_modules\" (
     echo.
 )
 
-:: Check .env exists
-if not exist "%~dp0.env" (
+:: Check .env exists in APPDATA data directory
+if not exist "%HAVEN_DATA%\.env" (
     if exist "%~dp0.env.example" (
-        echo  [*] Creating .env from template...
-        copy "%~dp0.env.example" "%~dp0.env" >nul
+        echo  [*] Creating .env in %HAVEN_DATA% from template...
+        copy "%~dp0.env.example" "%HAVEN_DATA%\.env" >nul
     )
-    echo  [!] IMPORTANT: Edit .env and change your settings before going live!
+    echo  [!] IMPORTANT: Edit %HAVEN_DATA%\.env and change your settings before going live!
     echo.
 )
 
+:: Generate self-signed SSL certs in data directory if missing
+if not exist "%HAVEN_DATA%\certs\cert.pem" (
+    echo  [*] Generating self-signed SSL certificate...
+    if not exist "%HAVEN_DATA%\certs" mkdir "%HAVEN_DATA%\certs"
+    where openssl >nul 2>&1
+    if %ERRORLEVEL% EQU 0 (
+        openssl req -x509 -newkey rsa:2048 -keyout "%HAVEN_DATA%\certs\key.pem" -out "%HAVEN_DATA%\certs\cert.pem" -days 3650 -nodes -subj "/CN=Haven" 2>nul
+        echo  [OK] SSL certificate generated in %HAVEN_DATA%\certs
+    ) else (
+        echo  [!] OpenSSL not found - skipping cert generation.
+        echo      Install OpenSSL or provide certs manually.
+    )
+    echo.
+)
+
+echo  [*] Data directory: %HAVEN_DATA%
 echo  [*] Starting Haven server...
 echo.
 

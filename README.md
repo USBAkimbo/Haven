@@ -72,7 +72,7 @@ https://localhost:3000
 ### 5. Create Your Admin Account
 
 1. Click **Register**
-2. Use the username `admin` (or whatever you set in `.env`)
+2. Use the username `admin` (or whatever you set in your data directory's `.env`)
 3. Pick a password
 4. You're now the admin — you can create channels
 
@@ -139,7 +139,12 @@ Tell them to click **Advanced** → **Proceed** on the certificate warning. It's
 
 ## Configuration
 
-Settings are in the `.env` file (created automatically on first launch):
+Settings are in the `.env` file, stored in your **data directory** (created automatically on first launch):
+
+| OS | Data Directory |
+|----|---------------|
+| Windows | `%APPDATA%\Haven\` |
+| Linux / macOS | `~/.haven/` |
 
 | Setting | Default | What It Does |
 |---------|---------|-------------|
@@ -147,8 +152,9 @@ Settings are in the `.env` file (created automatically on first launch):
 | `SERVER_NAME` | `Haven` | Your server's display name |
 | `ADMIN_USERNAME` | `admin` | Register with this name to get admin powers |
 | `JWT_SECRET` | *(auto-generated)* | Security key — don't share or edit this |
-| `SSL_CERT_PATH` | `./certs/cert.pem` | Path to SSL certificate |
-| `SSL_KEY_PATH` | `./certs/key.pem` | Path to SSL private key |
+| `SSL_CERT_PATH` | *(auto-detected)* | Path to SSL certificate |
+| `SSL_KEY_PATH` | *(auto-detected)* | Path to SSL private key |
+| `HAVEN_DATA_DIR` | *(see above)* | Override the data directory location |
 
 After editing `.env`, restart the server.
 
@@ -246,7 +252,20 @@ Access admin controls in the **Settings** panel (⚙️ gear icon in the sidebar
 
 ## Backing Up Your Data
 
-Everything lives in one file: **`haven.db`** in the Haven folder. Copy it somewhere safe to back up all your messages, users, and channels.
+All your data lives in a dedicated directory **outside** the Haven code folder:
+
+| OS | Location |
+|----|----------|
+| Windows | `%APPDATA%\Haven\` |
+| Linux / macOS | `~/.haven/` |
+
+Inside you'll find:
+- **`haven.db`** — all messages, users, and channels
+- **`.env`** — your configuration
+- **`certs/`** — SSL certificates
+- **`uploads/`** — uploaded images
+
+Copy the entire folder somewhere safe to back up everything. The Haven code directory contains no personal data.
 
 ---
 

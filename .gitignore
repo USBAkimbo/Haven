@@ -7,6 +7,9 @@ certs/
 public/uploads/*
 !public/uploads/.gitkeep
 
+# Data directory (should never be in the project, but just in case)
+uploads/
+
 # OS junk
 Thumbs.db
 .DS_Store

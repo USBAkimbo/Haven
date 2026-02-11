@@ -1,10 +1,11 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const { DB_PATH } = require('./paths');
 
 let db;
 
 function initDatabase() {
-  db = new Database(path.join(__dirname, '..', 'haven.db'));
+  db = new Database(DB_PATH);
 
   // Performance settings
   db.pragma('journal_mode = WAL');

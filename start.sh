@@ -14,6 +14,10 @@ BOLD='\033[1m'
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
+# ── Data directory (~/.haven) ──────────────────────────────
+HAVEN_DATA="${HAVEN_DATA_DIR:-$HOME/.haven}"
+mkdir -p "$HAVEN_DATA"
+
 echo ""
 echo -e "${GREEN}${BOLD}  ========================================${NC}"
 echo -e "${GREEN}${BOLD}       HAVEN — Private Chat Server${NC}"
@@ -45,20 +49,20 @@ if [ ! -d "node_modules" ]; then
     echo ""
 fi
 
-# ── Create .env if missing ─────────────────────────────────
-if [ ! -f ".env" ]; then
+# ── Create .env in data directory if missing ───────────────
+if [ ! -f "$HAVEN_DATA/.env" ]; then
     if [ -f ".env.example" ]; then
-        cp .env.example .env
-        echo -e "${YELLOW}  [!] Created .env from template — edit it before going live!${NC}"
+        cp .env.example "$HAVEN_DATA/.env"
+        echo -e "${YELLOW}  [!] Created .env in $HAVEN_DATA — edit it before going live!${NC}"
     else
         echo -e "${YELLOW}  [!] No .env file found. Server will use defaults.${NC}"
     fi
 fi
 
-# ── Generate SSL certs if missing ──────────────────────────
-if [ ! -f "certs/cert.pem" ]; then
+# ── Generate SSL certs in data directory if missing ────────
+if [ ! -f "$HAVEN_DATA/certs/cert.pem" ]; then
     echo "  [*] Generating self-signed SSL certificate..."
-    mkdir -p certs
+    mkdir -p "$HAVEN_DATA/certs"
 
     # Detect local IP (Linux vs macOS)
     if command -v hostname &> /dev/null && hostname -I &> /dev/null; then
@@ -70,7 +74,7 @@ if [ ! -f "certs/cert.pem" ]; then
     fi
 
     openssl req -x509 -newkey rsa:2048 \
-        -keyout certs/key.pem -out certs/cert.pem \
+        -keyout "$HAVEN_DATA/certs/key.pem" -out "$HAVEN_DATA/certs/cert.pem" \
         -days 3650 -nodes -subj "/CN=Haven" \
         -addext "subjectAltName=IP:127.0.0.1,IP:${LOCAL_IP},DNS:localhost" \
         2>/dev/null
@@ -86,6 +90,7 @@ if command -v lsof &> /dev/null && lsof -ti:3000 &> /dev/null; then
     sleep 1
 fi
 
+echo "  [*] Data directory: $HAVEN_DATA"
 echo "  [*] Starting Haven server..."
 echo ""
 

@@ -28,7 +28,7 @@ That's it. The batch file will:
 ### Step 2 — Create Your Admin Account
 
 1. On the login page, click **Register**
-2. Create an account with the admin username (default: `admin` — check your `.env` file)
+2. Create an account with the admin username (default: `admin` — check your data directory's `.env` file)
 3. This account can create and delete channels
 
 ### Step 3 — Create a Channel
@@ -163,13 +163,19 @@ Voice chat is **peer-to-peer** — audio goes directly between you and other use
 
 ## ⚙️ Configuration
 
-All settings are in the `.env` file in the Haven folder:
+All settings are in the `.env` file in your **data directory**:
+
+| OS | Data Directory |
+|----|---------------|
+| Windows | `%APPDATA%\Haven\` |
+| Linux / macOS | `~/.haven/` |
 
 | Setting | What it does |
 |---------|-------------|
 | `PORT` | Server port (default: 3000) |
 | `ADMIN_USERNAME` | Which username gets admin powers |
 | `JWT_SECRET` | Auto-generated security key — don't share this |
+| `HAVEN_DATA_DIR` | Override where data is stored |
 
 > `.env` is created automatically on first launch. If you change it, restart the server.
 
@@ -179,8 +185,8 @@ All settings are in the `.env` file in the Haven folder:
 
 - **Bookmark the URL** — so you don't have to type the IP every time
 - **Keep the bat window open** — closing it stops the server
-- **Your data stays local** — all messages are stored in `haven.db` on your PC
-- **Back up `haven.db`** — copy it somewhere safe to preserve your chat history
+- **Your data is stored separately** — all messages, config, and uploads are in your data directory (`%APPDATA%\Haven` on Windows, `~/.haven` on Linux/macOS), not in the Haven code folder
+- **Back up your data directory** — copy it somewhere safe to preserve your chat history
 - **Channel codes are secrets** — treat them like passwords. Anyone with the code can join.
 
 ---
