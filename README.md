@@ -1,3 +1,7 @@
+
+<img width="1918" height="948" alt="Screenshot 2026-02-11 003911" src="https://github.com/user-attachments/assets/f41a2be4-d00c-4fcc-a802-ca550e16e43c" />
+
+
 # ⬡ HAVEN — Private Chat That Lives On Your Machine
 
 > **Your server. Your rules. No cloud. No accounts with Big Tech. No one reading your messages.**
@@ -178,6 +182,8 @@ Type `/` in the message box to see the full list. Here are some highlights:
 **Haven** · **Discord** · **Matrix** · **Tron** · **HALO** · **Lord of the Rings** · **Cyberpunk** · **Nord** · **Dracula** · **Bloodborne** · **Ice** · **Abyss**
 
 Your theme choice persists across sessions.
+
+<img width="1917" height="947" alt="Screenshot 2026-02-11 004102" src="https://github.com/user-attachments/assets/b47be23a-853c-42f8-94a2-d6adcb206966" />
 
 ---
 
