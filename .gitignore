@@ -1,0 +1,19 @@
+node_modules/
+haven.db
+haven.db-shm
+haven.db-wal
+.env
+certs/
+public/uploads/*
+!public/uploads/.gitkeep
+
+# OS junk
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Editor
+.vscode/
+*.swp
+*.swo
+*~

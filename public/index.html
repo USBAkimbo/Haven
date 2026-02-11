@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Haven — Login</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/theme-init.js"></script>
+</head>
+<body class="auth-page">
+
+  <div class="auth-container">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="logo">⬡</div>
+        <h1>HAVEN</h1>
+        <p class="tagline">Private chat, your rules</p>
+      </div>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="login">Login</button>
+        <button class="auth-tab" data-tab="register">Register</button>
+      </div>
+
+      <form id="login-form" class="auth-form">
+        <div class="form-group">
+          <label for="login-username">Username</label>
+          <input type="text" id="login-username" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn-primary">Login</button>
+      </form>
+
+      <form id="register-form" class="auth-form" style="display:none">
+        <div class="form-group">
+          <label for="reg-username">Username</label>
+          <input type="text" id="reg-username" autocomplete="username"
+                 minlength="3" maxlength="20" pattern="[a-zA-Z0-9_]+" required>
+          <small>3-20 characters, letters/numbers/underscores</small>
+        </div>
+        <div class="form-group">
+          <label for="reg-password">Password</label>
+          <input type="password" id="reg-password" autocomplete="new-password"
+                 minlength="6" required>
+          <small>Minimum 6 characters</small>
+        </div>
+        <div class="form-group">
+          <label for="reg-confirm">Confirm Password</label>
+          <input type="password" id="reg-confirm" autocomplete="new-password" required>
+        </div>
+        <button type="submit" class="btn-primary">Create Account</button>
+      </form>
+
+      <div id="auth-error" class="auth-error" style="display:none"></div>
+
+      <!-- EULA acceptance (required before login/register) -->
+      <div class="eula-notice" id="eula-notice">
+        <label class="eula-check-row">
+          <input type="checkbox" id="eula-checkbox">
+          <span>I have read and agree to the <a href="#" id="eula-link">Release of Liability Agreement</a></span>
+        </label>
+      </div>
+
+      <!-- Theme selector on login page -->
+      <div class="auth-theme-bar" id="auth-theme-bar">
+        <button class="theme-btn active" data-theme="haven" title="Haven"><span class="theme-icon">⬡</span></button>
+        <button class="theme-btn" data-theme="discord" title="Discord"><span class="theme-icon">🎮</span></button>
+        <button class="theme-btn" data-theme="matrix" title="Matrix"><span class="theme-icon">Ⅿ</span></button>
+        <button class="theme-btn" data-theme="tron" title="Tron"><span class="theme-icon">◈</span></button>
+        <button class="theme-btn" data-theme="halo" title="HALO"><span class="theme-icon">⌁</span></button>
+        <button class="theme-btn" data-theme="lotr" title="LoTR"><span class="theme-icon">⚜</span></button>
+        <button class="theme-btn" data-theme="cyberpunk" title="Cyberpunk"><span class="theme-icon">⚡</span></button>
+        <button class="theme-btn" data-theme="nord" title="Nord"><span class="theme-icon">❄</span></button>
+        <button class="theme-btn" data-theme="dracula" title="Dracula"><span class="theme-icon">🧛</span></button>
+        <button class="theme-btn" data-theme="bloodborne" title="Bloodborne"><span class="theme-icon">🩸</span></button>
+        <button class="theme-btn" data-theme="ice" title="Ice"><span class="theme-icon">🧊</span></button>
+        <button class="theme-btn" data-theme="abyss" title="Abyss"><span class="theme-icon">🌊</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EULA Modal -->
+  <div class="modal-overlay" id="eula-modal" style="display:none">
+    <div class="modal eula-modal">
+      <h3>⚖️ Release of Liability Agreement</h3>
+      <div class="eula-content">
+        <p><strong>HAVEN — END USER LICENSE &amp; RELEASE OF LIABILITY</strong></p>
+        <p><em>Effective Date: February 10, 2026 &nbsp;|&nbsp; Version 1.0</em></p>
+
+        <p>By accessing, registering for, or using this Haven server instance
+        (the “Service”), you acknowledge and agree to the following terms:</p>
+
+        <ol>
+          <li><strong>Work in Progress.</strong> This software is provided <em>as-is</em>,
+          in an active state of development. Features may be incomplete, unstable,
+          or subject to change without notice.</li>
+
+          <li><strong>No Warranty.</strong> The Service is offered without warranty of
+          any kind, express or implied, including but not limited to warranties of
+          merchantability, fitness for a particular purpose, or non-infringement.</li>
+
+          <li><strong>Assumption of Risk.</strong> You voluntarily assume all risk
+          associated with your use of the Service, including but not limited to
+          data loss, service interruptions, security vulnerabilities, and any
+          consequences arising from communications conducted through the Service.</li>
+
+          <li><strong>Release of Liability.</strong> You agree to hold harmless the
+          developer(s), server operator(s), host(s), and any affiliated parties
+          (collectively, “Providers”) from any and all claims, damages, losses,
+          liabilities, costs, or expenses arising out of or related to your use of
+          the Service.</li>
+
+          <li><strong>No Legal Advice.</strong> This agreement does not constitute
+          legal advice. If you require legal counsel, consult a licensed attorney.</li>
+
+          <li><strong>Data Handling.</strong> Messages, files, and user data stored
+          on this server are managed at the sole discretion of the server operator.
+          No guarantee of privacy, backup, or retention is made.</li>
+
+          <li><strong>User Conduct.</strong> You are solely responsible for your
+          conduct and any content you transmit through the Service. The server
+          operator reserves the right to remove content or restrict access at
+          any time for any reason.</li>
+
+          <li><strong>Acceptance.</strong> By checking the acceptance box and
+          continuing to use the Service, you confirm that you have read, understood,
+          and agree to be bound by these terms.</li>
+        </ol>
+
+        <p class="eula-footer"><em>If you do not agree to these terms, do not use this Service.</em></p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-sm" id="eula-decline-btn">Decline</button>
+        <button class="btn-sm btn-accent" id="eula-accept-btn">I Accept</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/theme.js"></script>
+  <script src="/js/auth.js"></script>
+</body>
+</html>
