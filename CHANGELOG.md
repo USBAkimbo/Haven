@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Haven uses [Sema
 
 ---
 
+## [1.4.5] — 2026-02-12
+
+### Fixed
+- **SSL_ERROR_RX_RECORD_TOO_LONG on Windows** — `Start Haven.bat` always opened the browser with `https://` even when the server was running in HTTP mode (no valid SSL certs). The batch file now detects the actual protocol and opens the correct URL. ([#2](https://github.com/ancsemi/Haven/issues/2))
+- **Unreliable OpenSSL detection in Start Haven.bat** — the `%ERRORLEVEL%` check inside a parenthesized `if` block was evaluated at parse time (classic cmd.exe bug), so the batch file could report "SSL certificate generated" even when OpenSSL wasn't installed. Replaced with `if errorlevel 1` (runtime-safe) and added a file-existence check after generation.
+
+### Improved
+- **Troubleshooting docs** — added SSL/HTTPS troubleshooting to both README and GUIDE, covering the `SSL_ERROR_RX_RECORD_TOO_LONG` error, how to tell if you're running HTTP vs HTTPS, and how to install OpenSSL on Windows.
+
+---
+
 ## [1.4.4] — 2025-07-18
 
 ### Added

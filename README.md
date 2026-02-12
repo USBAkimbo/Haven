@@ -243,6 +243,7 @@ Access admin controls in the **Settings** panel (⚙️ gear icon in the sidebar
 
 | Problem | Fix |
 |---------|-----|
+| "SSL_ERROR_RX_RECORD_TOO_LONG" | Your browser is using `https://` but the server is running HTTP. **Change the URL to `http://localhost:3000`**, or install OpenSSL and restart to enable HTTPS (see below). |
 | "Node.js is not installed" | Install from [nodejs.org](https://nodejs.org/). Restart PC. |
 | Browser shows blank page | Clear cache or try incognito/private window |
 | Friends can't connect | Check port forwarding + firewall. Make sure server is running. |
@@ -250,6 +251,21 @@ Access admin controls in the **Settings** panel (⚙️ gear icon in the sidebar
 | Voice chat echoes | Use headphones |
 | Voice doesn't work remotely | Must use `https://`, not `http://` |
 | Certificate error in browser | Normal — click Advanced → Proceed |
+
+### HTTPS / SSL Details
+
+Haven **automatically generates self-signed SSL certificates** on first launch — but only if **OpenSSL** is installed on your system.
+
+**How to tell which mode you're in:** Look at the startup banner in the terminal window. If the URL shows `http://` — you're on HTTP. If it shows `https://` — you're on HTTPS.
+
+**If Haven falls back to HTTP** (no OpenSSL, or cert generation failed):
+- Everything works fine for local use — just use `http://localhost:3000`
+- Voice chat will only work on localhost, not for remote friends
+- To enable HTTPS:
+  1. Install OpenSSL: [slproweb.com/products/Win32OpenSSL.html](https://slproweb.com/products/Win32OpenSSL.html) (the "Light" version)
+  2. During install, choose "Copy OpenSSL DLLs to the Windows system directory"
+  3. Restart your PC
+  4. Delete `%APPDATA%\Haven\certs` and re-launch `Start Haven.bat`
 
 ---
 

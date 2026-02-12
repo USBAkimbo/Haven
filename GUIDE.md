@@ -116,6 +116,7 @@ https://YOUR_PUBLIC_IP:3000
 
 | Problem | Solution |
 |---------|----------|
+| **"SSL_ERROR_RX_RECORD_TOO_LONG"** | Browser is using `https://` but server is running HTTP. Change URL to `http://localhost:3000`, or install OpenSSL and restart (see Troubleshooting below) |
 | Friends get "took too long to respond" | Port forwarding not set up, or firewall blocking |
 | Friends get "connection refused" | Server isn't running — launch `Start Haven.bat` |
 | Can't connect with `https://` | Make sure you're using port 3000, not 443 |
@@ -192,6 +193,19 @@ All settings are in the `.env` file in your **data directory**:
 ---
 
 ## 🆘 Troubleshooting
+
+**"SSL_ERROR_RX_RECORD_TOO_LONG" or "ERR_SSL_PROTOCOL_ERROR" in browser**
+→ Your browser is trying to connect via `https://` but the server is actually running in HTTP mode. This happens when SSL certificates weren't generated (usually because OpenSSL isn't installed).
+**Quick fix:** Change the URL in your browser from `https://localhost:3000` to `http://localhost:3000`.
+**Permanent fix:** Install OpenSSL so Haven can generate certificates:
+1. Download from [slproweb.com/products/Win32OpenSSL.html](https://slproweb.com/products/Win32OpenSSL.html) (the "Light" version is fine)
+2. During install, choose **"Copy OpenSSL DLLs to the Windows system directory"**
+3. **Restart your PC** (so OpenSSL is added to PATH)
+4. Delete the `certs` folder in your data directory (`%APPDATA%\Haven\certs`)
+5. Re-launch `Start Haven.bat` — it will regenerate certificates and start in HTTPS mode
+
+**How to tell if you're running HTTP or HTTPS:**
+Check the server's startup banner in the terminal. If it says `http://localhost:3000` — you're on HTTP. If it says `https://localhost:3000` — you're on HTTPS. The protocol in the URL you use must match.
 
 **"Node.js is not installed"**
 → Download and install from [nodejs.org](https://nodejs.org/). Restart your PC after installing.

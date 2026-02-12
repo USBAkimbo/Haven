@@ -55,12 +55,18 @@ if not exist "%HAVEN_DATA%\certs\cert.pem" (
     echo  [*] Generating self-signed SSL certificate...
     if not exist "%HAVEN_DATA%\certs" mkdir "%HAVEN_DATA%\certs"
     where openssl >nul 2>&1
-    if %ERRORLEVEL% EQU 0 (
-        openssl req -x509 -newkey rsa:2048 -keyout "%HAVEN_DATA%\certs\key.pem" -out "%HAVEN_DATA%\certs\cert.pem" -days 3650 -nodes -subj "/CN=Haven" 2>nul
-        echo  [OK] SSL certificate generated in %HAVEN_DATA%\certs
-    ) else (
+    if errorlevel 1 (
         echo  [!] OpenSSL not found - skipping cert generation.
-        echo      Install OpenSSL or provide certs manually.
+        echo      Haven will run in HTTP mode. See README for details.
+        echo      To enable HTTPS, install OpenSSL or provide certs manually.
+    ) else (
+        openssl req -x509 -newkey rsa:2048 -keyout "%HAVEN_DATA%\certs\key.pem" -out "%HAVEN_DATA%\certs\cert.pem" -days 3650 -nodes -subj "/CN=Haven" 2>nul
+        if exist "%HAVEN_DATA%\certs\cert.pem" (
+            echo  [OK] SSL certificate generated in %HAVEN_DATA%\certs
+        ) else (
+            echo  [!] SSL certificate generation failed.
+            echo      Haven will run in HTTP mode. See README for details.
+        )
     )
     echo.
 )
@@ -91,23 +97,45 @@ if %ERRORLEVEL% NEQ 0 (
     goto WAIT_LOOP
 )
 
+:: Detect protocol based on whether certs exist and server can use them
+set "HAVEN_PROTO=http"
+if exist "%HAVEN_DATA%\certs\cert.pem" (
+    if exist "%HAVEN_DATA%\certs\key.pem" (
+        set "HAVEN_PROTO=https"
+    )
+)
+
 echo.
-echo  ========================================
-echo    Haven is LIVE on port 3000 (HTTPS)
-echo  ========================================
-echo.
-echo  Local:    https://localhost:3000
-echo  LAN:      https://YOUR_LOCAL_IP:3000
-echo  Remote:   https://YOUR_PUBLIC_IP:3000
-echo.
-echo  First time? Your browser will show a security
-echo  warning (self-signed cert). Click "Advanced"
-echo  then "Proceed" to continue.
+if "%HAVEN_PROTO%"=="https" (
+    echo  ========================================
+    echo    Haven is LIVE on port 3000 ^(HTTPS^)
+    echo  ========================================
+    echo.
+    echo  Local:    https://localhost:3000
+    echo  LAN:      https://YOUR_LOCAL_IP:3000
+    echo  Remote:   https://YOUR_PUBLIC_IP:3000
+    echo.
+    echo  First time? Your browser will show a security
+    echo  warning ^(self-signed cert^). Click "Advanced"
+    echo  then "Proceed" to continue.
+) else (
+    echo  ========================================
+    echo    Haven is LIVE on port 3000 ^(HTTP^)
+    echo  ========================================
+    echo.
+    echo  Local:    http://localhost:3000
+    echo  LAN:      http://YOUR_LOCAL_IP:3000
+    echo  Remote:   http://YOUR_PUBLIC_IP:3000
+    echo.
+    echo  NOTE: Running without SSL. Voice chat and
+    echo  remote connections work best with HTTPS.
+    echo  See README for how to enable HTTPS.
+)
 echo.
 
-:: Open browser
+:: Open browser with correct protocol
 echo  [*] Opening browser...
-start https://localhost:3000
+start %HAVEN_PROTO%://localhost:3000
 
 echo.
 echo  ----------------------------------------
