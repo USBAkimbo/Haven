@@ -1,5 +1,4 @@
 
-<img width="1918" height="948" alt="Screenshot 2026-02-11 003911" src="https://github.com/user-attachments/assets/f41a2be4-d00c-4fcc-a802-ca550e16e43c" />
 
 
 # ⬡ HAVEN — Private Chat That Lives On Your Machine
@@ -10,6 +9,11 @@
 ![License](https://img.shields.io/badge/license-MIT--NC-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
+
+
+
+<img width="2553" height="1259" alt="Screenshot 2026-02-12 092841" src="https://github.com/user-attachments/assets/4e8bad21-047d-49be-87e0-7ce2ed2cbf5d" />
+
 
 ---
 
@@ -49,6 +53,8 @@ You launch it, your friends connect to your IP address, and you have a private g
 | **Moderation** | Admin: kick, mute (timed), ban, delete users, delete channels, auto-cleanup |
 | **Security** | Bcrypt passwords, JWT auth, HTTPS/SSL, rate limiting, CSP headers, input validation |
 | **Game** | Shippy Container — Drew's shipment got hung up. Server-wide leaderboard. |
+
+<img width="2557" height="1264" alt="Untitled" src="https://github.com/user-attachments/assets/dc124f44-303f-43b0-807b-489da68a7efa" />
 
 ---
 
