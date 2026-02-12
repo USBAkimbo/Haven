@@ -88,28 +88,22 @@ function startRgbCycle() {
   let speed    = saved ? saved.speed    : 30;   // 1-100
   let vibrancy = saved ? saved.vibrancy : 75;   // 10-100
 
-  // Update interval: speed 1 = 120ms, speed 100 = 8ms — maps to visual smoothness
-  function getInterval() { return Math.round(120 - (speed / 100) * 112); }
+  // Fixed 16ms tick (~60 fps). Speed controls hue step per tick:
+  // speed 1 → 0.8°/tick (50°/sec), speed 100 → 4.0°/tick (250°/sec)
+  const TICK = 16;
+  function getStep() { return 0.8 + (speed / 100) * 3.2; }
 
   _rgbInterval = setInterval(() => {
-    _rgbHue = (_rgbHue + 0.4) % 360;
+    _rgbHue = (_rgbHue + getStep()) % 360;
     const vib = vibrancy / 100;
     const palette = generateCustomPalette(_rgbHue, 0.75, 0.95, vib);
     applyCustomVars(palette);
-  }, getInterval());
+  }, TICK);
 
-  // Expose updaters so sliders can adjust live
+  // Expose updaters so sliders can adjust live (no restart needed — step recalcs each tick)
   startRgbCycle._setSpeed = (v) => {
     speed = v;
     localStorage.setItem('haven_rgb_settings', JSON.stringify({ speed, vibrancy }));
-    // Restart with new interval
-    if (_rgbInterval) { clearInterval(_rgbInterval); }
-    _rgbInterval = setInterval(() => {
-      _rgbHue = (_rgbHue + 0.4) % 360;
-      const vib = vibrancy / 100;
-      const palette = generateCustomPalette(_rgbHue, 0.75, 0.95, vib);
-      applyCustomVars(palette);
-    }, getInterval());
   };
   startRgbCycle._setVibrancy = (v) => {
     vibrancy = v;
@@ -231,7 +225,7 @@ function initCustomThemeEditor() {
   function redrawTri()  { drawTriangle(triCtx, triCanvas.width, triCanvas.height, hue, sat, val); }
 
   function apply() {
-    const palette = generateCustomPalette(hue, sat, val);
+    const palette = generateCustomPalette(hue, sat, val, sat);
     applyCustomVars(palette);
     localStorage.setItem('haven_custom_hsv', JSON.stringify({ h: hue, s: sat, v: val }));
     const swatch = document.getElementById('custom-theme-swatch');
@@ -298,7 +292,7 @@ function initThemeSwitcher(containerId, socket) {
   // If custom was saved, apply vars immediately
   if (saved === 'custom') {
     const hsv = JSON.parse(localStorage.getItem('haven_custom_hsv') || 'null');
-    if (hsv) applyCustomVars(generateCustomPalette(hsv.h, hsv.s, hsv.v));
+    if (hsv) applyCustomVars(generateCustomPalette(hsv.h, hsv.s, hsv.v, hsv.s));
   }
   // If rgb was saved, start cycling
   if (saved === 'rgb') {
@@ -327,7 +321,7 @@ function initThemeSwitcher(containerId, socket) {
 
       if (theme === 'custom') {
         const hsv = JSON.parse(localStorage.getItem('haven_custom_hsv') || 'null');
-        if (hsv) applyCustomVars(generateCustomPalette(hsv.h, hsv.s, hsv.v));
+        if (hsv) applyCustomVars(generateCustomPalette(hsv.h, hsv.s, hsv.v, hsv.s));
         if (customEditor && customEditor._show) customEditor._show();
         if (rgbEditor && rgbEditor._hide) rgbEditor._hide();
       } else if (theme === 'rgb') {
@@ -366,7 +360,7 @@ function applyThemeFromServer(theme) {
   stopRgbCycle();
   if (theme === 'custom') {
     const hsv = JSON.parse(localStorage.getItem('haven_custom_hsv') || 'null');
-    if (hsv) applyCustomVars(generateCustomPalette(hsv.h, hsv.s, hsv.v));
+    if (hsv) applyCustomVars(generateCustomPalette(hsv.h, hsv.s, hsv.v, hsv.s));
     const editor = document.getElementById('custom-theme-editor');
     if (editor && editor._show) editor._show();
   } else if (theme === 'rgb') {

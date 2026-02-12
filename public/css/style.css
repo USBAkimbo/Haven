@@ -672,6 +672,71 @@ input, textarea { font-family: inherit; outline: none; border: none; }
 
 
 /* ═══════════════════════════════════════════════════════════
+   SIDEBAR BOTTOM BAR & THEME POPUP
+   ═══════════════════════════════════════════════════════════ */
+
+.sidebar-bottom {
+  margin-top: auto;
+  position: relative;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+.sidebar-bottom-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  line-height: 1;
+}
+.sidebar-bottom-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.theme-popup {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 12px;
+  z-index: 100;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.theme-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.theme-popup-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════
    THEME SELECTOR
    ═══════════════════════════════════════════════════════════ */
 
@@ -3281,32 +3346,6 @@ input, textarea { font-family: inherit; outline: none; border: none; }
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SIDEBAR GAME BUTTON
-   ═══════════════════════════════════════════════════════════ */
-
-.btn-game-sidebar {
-  display: block;
-  width: 100%;
-  margin-top: 8px;
-  padding: 6px 10px;
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition);
-  text-align: center;
-}
-
-.btn-game-sidebar:hover {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
-
-/* ═══════════════════════════════════════════════════════════
    EULA
    ═══════════════════════════════════════════════════════════ */
 
@@ -3462,6 +3501,20 @@ input, textarea { font-family: inherit; outline: none; border: none; }
   color: var(--text-muted);
 }
 
+.screen-share-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stream-size-slider {
+  width: 70px;
+  height: 4px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
 .screen-share-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -3494,28 +3547,6 @@ input, textarea { font-family: inherit; outline: none; border: none; }
   padding: 2px 8px;
   border-radius: 4px;
   pointer-events: none;
-}
-
-.screen-share-tile-close {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  border: none;
-  border-radius: 50%;
-  width: 22px;
-  height: 22px;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
-.screen-share-tile-close:hover {
-  background: var(--danger);
 }
 
 .btn-voice.sharing {
@@ -4028,8 +4059,9 @@ input, textarea { font-family: inherit; outline: none; border: none; }
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
-  padding: 6px 10px;
+  margin-top: 0;
+  margin-left: auto;
+  padding: 5px 10px;
   background: var(--success);
   color: #fff;
   border-radius: var(--radius-sm);

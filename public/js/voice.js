@@ -14,7 +14,7 @@ class VoiceManager {
     this.isMuted = false;
     this.isDeafened = false;
     this.inVoice = false;
-    this.noiseSensitivity = 50;     // Noise gate sensitivity 0 (off) to 100 (aggressive)
+    this.noiseSensitivity = 10;     // Noise gate sensitivity 0 (off) to 100 (aggressive)
     this.audioCtx = null;           // Web Audio context for volume boost
     this.gainNodes = new Map();     // userId → GainNode
     this.onScreenStream = null;     // callback(userId, stream|null) — set by app.js

@@ -16,7 +16,7 @@
         }
         function _hex(h,s,v){var c=_hsvRgb(h,s,v);return'#'+c.map(function(x){return x.toString(16).padStart(2,'0')}).join('')}
         var el = document.documentElement;
-        var vib = 0.5; // default vibrancy
+        var vib = s; // vibrancy follows saturation for dramatic bg changes
         var bgSat = 0.05 + vib * 0.30;
         var bdrSat = 0.05 + vib * 0.25;
         el.style.setProperty('--accent', _hex(h,s,v));

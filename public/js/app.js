@@ -591,6 +591,23 @@ class HavenApp {
     document.getElementById('voice-leave-btn').addEventListener('click', () => this._leaveVoice());
     document.getElementById('screen-share-btn').addEventListener('click', () => this._toggleScreenShare());
     document.getElementById('screen-share-close').addEventListener('click', () => this._hideScreenShare());
+    // Stream size slider
+    const streamSizeSlider = document.getElementById('stream-size-slider');
+    if (streamSizeSlider) {
+      const savedSize = localStorage.getItem('haven_stream_size');
+      if (savedSize) streamSizeSlider.value = savedSize;
+      const applySize = () => {
+        const vh = parseInt(streamSizeSlider.value, 10);
+        const container = document.getElementById('screen-share-container');
+        container.style.maxHeight = vh + 'vh';
+        const grid = document.getElementById('screen-share-grid');
+        grid.style.maxHeight = (vh - 2) + 'vh';
+        document.querySelectorAll('.screen-share-tile video').forEach(v => { v.style.maxHeight = (vh - 4) + 'vh'; });
+        localStorage.setItem('haven_stream_size', vh);
+      };
+      applySize();
+      streamSizeSlider.addEventListener('input', applySize);
+    }
     document.getElementById('voice-ns-slider').addEventListener('input', (e) => {
       if (this.voice && this.voice.inVoice) {
         this.voice.setNoiseSensitivity(parseInt(e.target.value, 10));
@@ -677,7 +694,17 @@ class HavenApp {
       if (e.key === 'Escape') {
         document.getElementById('search-container').style.display = 'none';
         document.getElementById('search-results-panel').style.display = 'none';
+        document.getElementById('theme-popup').style.display = 'none';
       }
+    });
+
+    // Theme popup toggle
+    document.getElementById('theme-popup-toggle')?.addEventListener('click', () => {
+      const popup = document.getElementById('theme-popup');
+      popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+    });
+    document.getElementById('theme-popup-close')?.addEventListener('click', () => {
+      document.getElementById('theme-popup').style.display = 'none';
     });
 
     // Logout
@@ -1343,8 +1370,8 @@ class HavenApp {
     document.getElementById('channel-header-name').textContent = displayName;
     document.getElementById('channel-code-display').textContent = isDm ? '' : code;
     document.getElementById('copy-code-btn').style.display = isDm ? 'none' : 'inline-flex';
-    // Update voice button state for this channel
-    if (this.voice && this.voice.inVoice && this.voice.currentChannel === code) {
+    // Update voice button state — persist controls if in voice anywhere
+    if (this.voice && this.voice.inVoice) {
       this._updateVoiceButtons(true);
     } else {
       // Show just the join button (not mute/deafen/leave)
@@ -2035,7 +2062,7 @@ class HavenApp {
       document.getElementById('voice-deafen-btn').classList.remove('muted');
       document.getElementById('screen-share-btn').textContent = '🖥️ Share';
       document.getElementById('screen-share-btn').classList.remove('sharing');
-      document.getElementById('voice-ns-slider').value = 50;
+      document.getElementById('voice-ns-slider').value = 10;
       this._hideScreenShare();
     }
   }
@@ -2135,16 +2162,6 @@ class HavenApp {
         lbl.textContent = who;
         tile.appendChild(lbl);
 
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'screen-share-tile-close';
-        closeBtn.title = 'Hide this stream';
-        closeBtn.textContent = '×';
-        closeBtn.addEventListener('click', () => {
-          tile.remove();
-          this._updateScreenShareVisibility();
-        });
-        tile.appendChild(closeBtn);
-
         grid.appendChild(tile);
       }
       const videoEl = tile.querySelector('video');
@@ -2188,13 +2205,7 @@ class HavenApp {
   _hideScreenShare() {
     const container = document.getElementById('screen-share-container');
     const grid = document.getElementById('screen-share-grid');
-    // If WE are sharing, stop it
-    if (this.voice && this.voice.isScreenSharing) {
-      this.voice.stopScreenShare();
-      document.getElementById('screen-share-btn').textContent = '🖥️ Share';
-      document.getElementById('screen-share-btn').classList.remove('sharing');
-    }
-    // Just minimize — don't destroy other people's streams
+    // Just minimize — don't destroy streams or stop sharing
     container.style.display = 'none';
     this._screenShareMinimized = true;
     // Show a "streams hidden" indicator if there are still tiles
