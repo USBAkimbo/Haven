@@ -99,7 +99,6 @@ class HavenApp {
     this._setupStatusPicker();
     this._setupFileUpload();
     this._setupIdleDetection();
-    this._initSliderFills();
     this._setupAvatarUpload();
     this._setupSoundManagement();
 
@@ -2514,14 +2513,12 @@ class HavenApp {
 
     // Bind volume sliders
     el.querySelectorAll('.volume-slider').forEach(slider => {
-      if (this._sliderFillUpdate) this._sliderFillUpdate(slider);
       slider.addEventListener('input', () => {
         const userId = parseInt(slider.dataset.userId);
         const vol = parseInt(slider.value);
         slider.title = `Volume: ${vol}%`;
         this._setVoiceVolume(userId, vol);
         if (this.voice) this.voice.setVolume(userId, vol / 100);
-        if (this._sliderFillUpdate) this._sliderFillUpdate(slider);
       });
     });
   }
@@ -3202,7 +3199,7 @@ class HavenApp {
     // Apply saved volume
     const savedVol = parseInt(localStorage.getItem('haven_music_volume') ?? '80');
     document.getElementById('music-volume-slider').value = savedVol;
-    if (this._sliderFillUpdate) this._sliderFillUpdate(document.getElementById('music-volume-slider'));
+
 
     // Initialize platform-specific APIs for volume & sync control
     const iframe = document.getElementById('music-iframe');
@@ -3398,15 +3395,19 @@ class HavenApp {
     popWin.document.write(`<!DOCTYPE html><html><head><title>Haven — ${this._escapeHtml(platform)}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1a1a2e;overflow:hidden;display:flex;align-items:center;justify-content:center;height:100vh}iframe{width:100%;height:100%;border:none}</style></head><body><iframe src="${this._escapeHtml(src)}" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></body></html>`);
     popWin.document.close();
 
+    // Stop the original iframe so audio doesn't play in both windows
+    iframe.src = 'about:blank';
+
     // Minimize the in-app panel while popped out
     this._minimizeMusicPanel();
 
-    // When pop-out window closes, show indicator (music is still playing on the server)
+    // When pop-out window closes, restore the original embed
     const checkClosed = setInterval(() => {
       if (popWin.closed) {
         clearInterval(checkClosed);
-        // If music is still active, show the indicator
         if (this._musicActive) {
+          // Restore the original embed iframe so music continues in-app
+          iframe.src = src;
           this._showMusicIndicator();
         }
       }
@@ -3460,7 +3461,6 @@ class HavenApp {
       muteBtn.textContent = '🔊';
     }
     this._setMusicVolume(parseInt(slider.value));
-    if (this._sliderFillUpdate) this._sliderFillUpdate(slider);
   }
 
   _getMusicEmbed(url) {
@@ -4600,99 +4600,6 @@ class HavenApp {
     this._markReadTimer = setTimeout(() => {
       this.socket.emit('mark-read', { code: this.currentChannel, messageId });
     }, 500);
-  }
-
-  // ═══════════════════════════════════════════════════════
-  // ── Slider Fill Helper ────────────────────────────────
-  // ═══════════════════════════════════════════════════════
-
-  _initSliderFills() {
-    // Inject a <style> element that we rewrite with per-slider gradient rules.
-    // This is the only reliable approach for Chrome: `::-webkit-slider-runnable-track`
-    // is a shadow-DOM pseudo-element, and Chrome does NOT repaint it when an
-    // inline CSS custom-property on the host <input> changes.
-    const styleEl = document.createElement('style');
-    styleEl.id = 'haven-slider-fills';
-    document.head.appendChild(styleEl);
-    let nextId = 0;
-    const rules = new Map();          // sfid → CSS rule text
-    let rafPending = false;
-
-    const flush = () => {
-      styleEl.textContent = Array.from(rules.values()).join('\n');
-      rafPending = false;
-    };
-
-    const update = (slider) => {
-      const min  = parseFloat(slider.min) || 0;
-      const max  = parseFloat(slider.max) || 100;
-      const val  = parseFloat(slider.value) || 0;
-      const pct  = ((val - min) / (max - min)) * 100;
-
-      // Read themed colours from the element's computed style
-      const cs   = getComputedStyle(slider);
-      const fill = cs.getPropertyValue('--track-fill').trim()
-                || cs.getPropertyValue('--accent').trim() || '#7c5cfc';
-      const bg   = cs.getPropertyValue('--track-bg').trim()
-                || cs.getPropertyValue('--bg-tertiary').trim() || '#2a2a3d';
-
-      const id = slider.dataset.sfid;
-      rules.set(id,
-        `input[data-sfid="${id}"]::-webkit-slider-runnable-track{` +
-        `background:linear-gradient(to right,${fill} ${pct}%,${bg} ${pct}%)!important;}`
-      );
-
-      // Firefox uses ::-moz-range-progress natively, but set --fill as well
-      slider.style.setProperty('--fill', pct + '%');
-
-      if (!rafPending) { rafPending = true; requestAnimationFrame(flush); }
-    };
-
-    const hookSlider = (s) => {
-      if (s._fillHooked) return;
-      s._fillHooked = true;
-      s.dataset.sfid = String(nextId++);
-      // Defer first paint so computed styles are available
-      requestAnimationFrame(() => update(s));
-      s.addEventListener('input', () => update(s));
-      s.addEventListener('change', () => update(s));
-    };
-
-    document.querySelectorAll('input[type="range"]').forEach(hookSlider);
-    this._sliderFillUpdate = update;
-
-    // Observe future sliders (dynamically created — voice, stream, music, etc.)
-    const observer = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        for (const node of m.addedNodes) {
-          if (node.nodeType !== 1) continue;
-          if (node.matches && node.matches('input[type="range"]')) hookSlider(node);
-          if (node.querySelectorAll) node.querySelectorAll('input[type="range"]').forEach(hookSlider);
-        }
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    // Intercept programmatic .value sets so fill always stays in sync
-    try {
-      const nativeDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
-      if (nativeDesc && nativeDesc.set && nativeDesc.configurable) {
-        const nativeSet = nativeDesc.set;
-        nativeDesc.set = function (v) {
-          nativeSet.call(this, v);
-          if (this.type === 'range' && this._fillHooked) update(this);
-        };
-        Object.defineProperty(HTMLInputElement.prototype, 'value', nativeDesc);
-      }
-    } catch { /* Some environments lock HTMLInputElement.prototype.value */ }
-
-    // Re-render fills on theme change (accent / bg colours may have changed)
-    const themeObserver = new MutationObserver(() => {
-      document.querySelectorAll('input[type="range"]').forEach(s => {
-        if (s._fillHooked) requestAnimationFrame(() => update(s));
-      });
-    });
-    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
   }
 }
 

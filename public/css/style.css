@@ -809,10 +809,9 @@ button { font-family: inherit; cursor: pointer; border: none; outline: none; }
 input, textarea { font-family: inherit; outline: none; border: none; }
 ::selection { background: var(--accent); color: white; }
 
-/* ── Range Input Track Gradient (modern Chrome / Edge) ────── */
-/* The gradient lives on the track pseudo-element so Chrome renders it.
-   Slider classes set --track-fill / --track-bg / --track-h / --track-r
-   to override the defaults below.  --fill is set by JS inline style.  */
+/* ── Range Input Track (slider background) ──────────────── */
+/* Slider classes set --track-bg / --track-h / --track-r to override
+   the defaults below. Themed tracks use --track-bg for colouring.  */
 input[type="range"]:not(.rgb-slider)::-webkit-slider-runnable-track {
   background: var(--track-bg, var(--bg-tertiary));
   height: var(--track-h, 4px);
@@ -1575,12 +1574,6 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   cursor: pointer;
   border: none;
 }
-.ns-slider::-moz-range-progress {
-  background: var(--accent);
-  border-radius: 2px;
-  height: 4px;
-}
-
 /* ── Welcome Screen ────────────────────────────────────── */
 
 .welcome-screen { flex: 1; display: flex; align-items: center; justify-content: center; }
@@ -1671,20 +1664,27 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   box-sizing: border-box;
 }
 
+/* Away: half-circle (dome) — visually distinct from full circle */
 .user-status-dot.away {
   background: #faa61a;
+  border-radius: 2px 2px 50% 50%;
 }
 
+/* DND: square — immediately distinguishable */
 .user-status-dot.dnd {
   background: var(--danger);
+  border-radius: 2px;
 }
 
+/* Invisible / Offline: hollow circle outline */
 .user-status-dot.invisible {
-  background: var(--text-muted);
+  background: transparent;
+  border: 2px solid var(--text-muted);
 }
 
 .user-item.offline .user-status-dot {
-  background: var(--text-muted);
+  background: transparent;
+  border: 2px solid var(--text-muted);
 }
 
 .user-item-avatar {
@@ -2258,13 +2258,6 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   cursor: pointer;
   border: none;
   box-shadow: 0 0 4px var(--accent-glow, rgba(124,92,252,0.3));
-}
-
-/* Firefox native progress fill */
-.slider-sm::-moz-range-progress {
-  background: var(--accent);
-  border-radius: 2px;
-  height: 4px;
 }
 
 .select-row select {
@@ -3142,7 +3135,7 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 }
 
 .user-item.offline { opacity: 0.5; }
-.user-dot.away { background: var(--text-muted); }
+.user-dot.away { background: var(--text-muted); border-radius: 2px 2px 50% 50%; }
 
 
 /* ═══════════════════════════════════════════════════════════
@@ -4125,12 +4118,6 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   cursor: pointer;
   border: none;
 }
-.stream-size-slider::-moz-range-progress {
-  background: var(--accent);
-  border-radius: 2px;
-  height: 4px;
-}
-
 .screen-share-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -4223,12 +4210,6 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   cursor: pointer;
   border: none;
 }
-.stream-vol-slider::-moz-range-progress {
-  background: var(--accent);
-  border-radius: 2px;
-  height: 4px;
-}
-
 .stream-vol-pct {
   color: rgba(255,255,255,0.7);
   font-size: 10px;
@@ -4783,19 +4764,26 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
    User Status Dots
    ═══════════════════════════════════════════════════════════ */
 
+/* DND: square — distinct shape */
 .user-dot.dnd {
   background-color: var(--danger) !important;
   box-shadow: 0 0 4px var(--danger);
+  border-radius: 2px;
 }
 
+/* Away: half-circle dome */
 .user-dot.away {
   background-color: #faa61a !important;
   box-shadow: 0 0 4px rgba(250, 166, 26, 0.4);
+  border-radius: 2px 2px 50% 50%;
 }
 
+/* Invisible: hollow circle */
 .user-dot.invisible {
-  background-color: var(--text-muted) !important;
+  background-color: transparent !important;
+  border: 2px solid var(--text-muted);
   box-shadow: none;
+  box-sizing: border-box;
 }
 
 .user-status-text {
@@ -5080,45 +5068,35 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 /* Bloodborne / Dark Souls — health bar red glow */
 [data-theme="bloodborne"] .slider-sm,
 [data-theme="bloodborne"] .ns-slider {
-  --track-fill: #cc0020;
   --track-bg: #1a0c0c;
 }
 [data-theme="bloodborne"] .slider-sm::-webkit-slider-thumb,
 [data-theme="bloodborne"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 8px rgba(204, 0, 32, 0.6);
 }
-[data-theme="bloodborne"] .slider-sm::-moz-range-progress,
-[data-theme="bloodborne"] .ns-slider::-moz-range-progress { background: #cc0020; }
 
 [data-theme="darksouls"] .slider-sm,
 [data-theme="darksouls"] .ns-slider {
-  --track-fill: #c8a84e;
   --track-bg: #1a1510;
 }
 [data-theme="darksouls"] .slider-sm::-webkit-slider-thumb,
 [data-theme="darksouls"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 8px rgba(200, 168, 78, 0.5);
 }
-[data-theme="darksouls"] .slider-sm::-moz-range-progress,
-[data-theme="darksouls"] .ns-slider::-moz-range-progress { background: #c8a84e; }
 
 /* Elden Ring — golden estus glow */
 [data-theme="eldenring"] .slider-sm,
 [data-theme="eldenring"] .ns-slider {
-  --track-fill: #d4a832;
   --track-bg: #14141e;
 }
 [data-theme="eldenring"] .slider-sm::-webkit-slider-thumb,
 [data-theme="eldenring"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 10px rgba(212, 168, 50, 0.6);
 }
-[data-theme="eldenring"] .slider-sm::-moz-range-progress,
-[data-theme="eldenring"] .ns-slider::-moz-range-progress { background: #d4a832; }
 
 /* Minecraft — blocky green bar */
 [data-theme="minecraft"] .slider-sm,
 [data-theme="minecraft"] .ns-slider {
-  --track-fill: #55bb55;
   --track-bg: #2e2e2e;
   --track-h: 6px;
   --track-r: 0;
@@ -5136,13 +5114,10 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 [data-theme="minecraft"] .ns-slider::-moz-range-thumb {
   border-radius: 2px;
 }
-[data-theme="minecraft"] .slider-sm::-moz-range-progress,
-[data-theme="minecraft"] .ns-slider::-moz-range-progress { background: #55bb55; }
 
 /* Final Fantasy X — blue mana bar */
 [data-theme="ffx"] .slider-sm,
 [data-theme="ffx"] .ns-slider {
-  --track-fill: #40a8e0;
   --track-bg: #101a30;
   --track-h: 5px;
   height: 5px;
@@ -5151,13 +5126,10 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 [data-theme="ffx"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 8px rgba(64, 168, 224, 0.5);
 }
-[data-theme="ffx"] .slider-sm::-moz-range-progress,
-[data-theme="ffx"] .ns-slider::-moz-range-progress { background: #40a8e0; }
 
 /* Zelda — green heart / stamina bar */
 [data-theme="zelda"] .slider-sm,
 [data-theme="zelda"] .ns-slider {
-  --track-fill: #44bb44;
   --track-bg: #142014;
   --track-h: 5px;
   height: 5px;
@@ -5166,91 +5138,70 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 [data-theme="zelda"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 8px rgba(68, 187, 68, 0.5);
 }
-[data-theme="zelda"] .slider-sm::-moz-range-progress,
-[data-theme="zelda"] .ns-slider::-moz-range-progress { background: #44bb44; }
 
 /* Matrix — green terminal glow */
 [data-theme="matrix"] .slider-sm,
 [data-theme="matrix"] .ns-slider {
-  --track-fill: #00ff41;
   --track-bg: #0a0a0a;
 }
 [data-theme="matrix"] .slider-sm::-webkit-slider-thumb,
 [data-theme="matrix"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
 }
-[data-theme="matrix"] .slider-sm::-moz-range-progress,
-[data-theme="matrix"] .ns-slider::-moz-range-progress { background: #00ff41; }
 
 /* Tron — neon blue trail */
 [data-theme="tron"] .slider-sm,
 [data-theme="tron"] .ns-slider {
-  --track-fill: #6fecff;
   --track-bg: #0c141f;
 }
 [data-theme="tron"] .slider-sm::-webkit-slider-thumb,
 [data-theme="tron"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 10px rgba(111, 236, 255, 0.6);
 }
-[data-theme="tron"] .slider-sm::-moz-range-progress,
-[data-theme="tron"] .ns-slider::-moz-range-progress { background: #6fecff; }
 
 /* Cyberpunk — neon pink */
 [data-theme="cyberpunk"] .slider-sm,
 [data-theme="cyberpunk"] .ns-slider {
-  --track-fill: #ff2d6f;
   --track-bg: #0a0a12;
 }
 [data-theme="cyberpunk"] .slider-sm::-webkit-slider-thumb,
 [data-theme="cyberpunk"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 8px rgba(255, 45, 111, 0.5);
 }
-[data-theme="cyberpunk"] .slider-sm::-moz-range-progress,
-[data-theme="cyberpunk"] .ns-slider::-moz-range-progress { background: #ff2d6f; }
 
 /* Halo — UNSC blue-green */
 [data-theme="halo"] .slider-sm,
 [data-theme="halo"] .ns-slider {
-  --track-fill: #4fc3f7;
   --track-bg: #0d1a0d;
 }
 [data-theme="halo"] .slider-sm::-webkit-slider-thumb,
 [data-theme="halo"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 8px rgba(79, 195, 247, 0.5);
 }
-[data-theme="halo"] .slider-sm::-moz-range-progress,
-[data-theme="halo"] .ns-slider::-moz-range-progress { background: #4fc3f7; }
 
 /* Ice — frozen blue */
 [data-theme="ice"] .slider-sm,
 [data-theme="ice"] .ns-slider {
-  --track-fill: #00d4ff;
   --track-bg: #102030;
 }
 [data-theme="ice"] .slider-sm::-webkit-slider-thumb,
 [data-theme="ice"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 10px rgba(0, 212, 255, 0.6);
 }
-[data-theme="ice"] .slider-sm::-moz-range-progress,
-[data-theme="ice"] .ns-slider::-moz-range-progress { background: #00d4ff; }
 
 /* LoTR — golden warmth */
 [data-theme="lotr"] .slider-sm,
 [data-theme="lotr"] .ns-slider {
-  --track-fill: #d4a844;
   --track-bg: #2a221a;
 }
 [data-theme="lotr"] .slider-sm::-webkit-slider-thumb,
 [data-theme="lotr"] .ns-slider::-webkit-slider-thumb {
   box-shadow: 0 0 6px rgba(212, 168, 68, 0.5);
 }
-[data-theme="lotr"] .slider-sm::-moz-range-progress,
-[data-theme="lotr"] .ns-slider::-moz-range-progress { background: #d4a844; }
 
 /* Dracula — purple accent */
 [data-theme="dracula"] .slider-sm,
 [data-theme="dracula"] .ns-slider {
-  --track-fill: #bd93f9;
   --track-bg: #22232e;
 }
 [data-theme="dracula"] .slider-sm::-webkit-slider-thumb,
