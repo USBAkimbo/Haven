@@ -18,6 +18,17 @@ document.addEventListener('DOMContentLoaded', () => {
     window.location.href = '/app';
   });
 
+  // ── Leaderboard slide-out toggle (mobile) ─────────────
+  const lbPanel = document.getElementById('leaderboard-panel');
+  const lbToggle = document.getElementById('lb-toggle-btn');
+  const lbBackdrop = document.getElementById('lb-backdrop');
+  function toggleLB() {
+    const open = lbPanel.classList.toggle('lb-open');
+    lbBackdrop.classList.toggle('lb-open', open);
+  }
+  if (lbToggle) lbToggle.addEventListener('click', toggleLB);
+  if (lbBackdrop) lbBackdrop.addEventListener('click', toggleLB);
+
   // ── Sound: blip on flap ──────────────────────────────
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let audioCtx = null;

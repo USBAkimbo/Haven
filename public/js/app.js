@@ -3385,37 +3385,189 @@ class HavenApp {
 
     const src = iframe.src;
     const platform = this._musicPlatform || 'Music';
+    const volume = parseInt(document.getElementById('music-volume-slider')?.value ?? '80');
 
     // Size based on platform
-    let w = 420, h = 320;
-    if (src.includes('spotify.com')) { w = 400; h = 260; }
-    else if (src.includes('soundcloud.com')) { w = 420; h = 320; }
-    else if (src.includes('youtube.com')) { w = 480; h = 360; }
+    let w = 480, h = 400;
+    if (src.includes('spotify.com')) { w = 440; h = 340; }
+    else if (src.includes('soundcloud.com')) { w = 480; h = 380; }
+    else if (src.includes('youtube.com')) { w = 520; h = 440; }
 
-    // Open the embed URL directly — gives native platform controls and
-    // preserves the user's widget state (position, volume) for SoundCloud/Spotify
-    const popWin = window.open(src, 'haven-music-popout', `width=${w},height=${h},resizable=yes`);
-    if (!popWin) {
-      this._showToast('Pop-up blocked — allow pop-ups for this site', 'error');
-      return;
-    }
-
-    // Stop the original iframe so audio doesn't play in both windows
-    iframe.src = 'about:blank';
-
-    // Minimize the in-app panel while popped out
-    this._minimizeMusicPanel();
-
-    // When pop-out window closes, restore the original embed
-    const checkClosed = setInterval(() => {
-      if (popWin.closed) {
-        clearInterval(checkClosed);
-        if (this._musicActive) {
-          iframe.src = src;
-          this._showMusicIndicator();
-        }
+    // Helper: get current playback position, then open the popup
+    const doPopOut = (seekMs) => {
+      // For YouTube, append &start= param in seconds
+      let embedSrc = src;
+      if (seekMs > 0 && src.includes('youtube.com')) {
+        const secs = Math.floor(seekMs / 1000);
+        embedSrc = src.replace(/[?&]start=\d+/, '') + `&start=${secs}`;
       }
-    }, 500);
+
+      const popWin = window.open('', 'haven-music-popout', `width=${w},height=${h},resizable=yes`);
+      if (!popWin) {
+        this._showToast('Pop-up blocked — allow pop-ups for this site', 'error');
+        return;
+      }
+
+      // Build a proper Haven-styled popup with controls
+      const isSC = src.includes('soundcloud.com');
+      const isYT = src.includes('youtube.com');
+      const iframeH = isSC ? 166 : isYT ? 280 : 152;
+      popWin.document.write(`<!DOCTYPE html>
+<html><head><title>${platform} — Haven</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #e6e6e6; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; }
+  .pop-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #161b22; border-bottom: 2px solid #7c5cfc; flex-shrink: 0; }
+  .pop-header .pop-in-btn { background: rgba(255,255,255,0.1); border: none; color: #e6e6e6; cursor: pointer; font-size: 15px; padding: 4px 8px; border-radius: 4px; line-height: 1; }
+  .pop-header .pop-in-btn:hover { background: rgba(255,255,255,0.2); }
+  .pop-header .label { font-size: 12px; font-weight: 600; color: #8b949e; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pop-controls { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #161b22; flex-shrink: 0; }
+  .pop-controls button { background: rgba(255,255,255,0.1); border: none; color: #e6e6e6; cursor: pointer; font-size: 16px; padding: 6px 10px; border-radius: 4px; }
+  .pop-controls button:hover { background: rgba(255,255,255,0.2); }
+  .vol-wrap { display: flex; align-items: center; gap: 6px; flex: 1; }
+  .vol-wrap label { font-size: 14px; cursor: pointer; }
+  input[type=range] { -webkit-appearance: none; height: 4px; background: #30363d; border-radius: 2px; outline: none; flex: 1; max-width: 140px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: #7c5cfc; border-radius: 50%; cursor: pointer; }
+  .embed-area { flex: 1; overflow: hidden; display: flex; align-items: stretch; }
+  .embed-area iframe { width: 100%; border: none; flex: 1; }
+</style>
+</head><body>
+<div class="pop-header">
+  <button class="pop-in-btn" id="pop-in-btn" title="Pop back into Haven">⧉</button>
+  <span class="label">🎵 ${platform} — Haven</span>
+</div>
+<div class="pop-controls">
+  <button id="pp-btn" title="Play/Pause">⏸</button>
+  <div class="vol-wrap">
+    <label id="mute-btn" title="Mute">🔊</label>
+    <input type="range" id="vol-slider" min="0" max="100" value="${volume}">
+  </div>
+</div>
+<div class="embed-area">
+  <iframe id="pop-iframe" src="${embedSrc}" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+</div>
+${isSC ? '<script src="https://w.soundcloud.com/player/api.js"><\/script>' : ''}
+${isYT ? '<script src="https://www.youtube.com/iframe_api"><\/script>' : ''}
+<script>
+  let playing = true, vol = ${volume}, prevVol = ${volume};
+  const iframe = document.getElementById('pop-iframe');
+  let scWidget = null, ytPlayer = null;
+
+  // Pop back in
+  document.getElementById('pop-in-btn').addEventListener('click', () => {
+    try { window.opener.postMessage({ type: 'haven-music-popin' }, '*'); } catch {}
+    window.close();
+  });
+
+  // Play/Pause
+  document.getElementById('pp-btn').addEventListener('click', () => {
+    playing = !playing;
+    document.getElementById('pp-btn').textContent = playing ? '⏸' : '▶';
+    if (scWidget) { playing ? scWidget.play() : scWidget.pause(); }
+    else if (ytPlayer && ytPlayer.pauseVideo) { playing ? ytPlayer.playVideo() : ytPlayer.pauseVideo(); }
+  });
+
+  // Volume
+  document.getElementById('vol-slider').addEventListener('input', (e) => {
+    vol = parseInt(e.target.value);
+    if (scWidget) scWidget.setVolume(vol);
+    else if (ytPlayer && ytPlayer.setVolume) ytPlayer.setVolume(vol);
+    document.getElementById('mute-btn').textContent = vol === 0 ? '🔇' : '🔊';
+  });
+
+  // Mute toggle
+  document.getElementById('mute-btn').addEventListener('click', () => {
+    if (vol > 0) { prevVol = vol; vol = 0; } else { vol = prevVol || 80; }
+    document.getElementById('vol-slider').value = vol;
+    document.getElementById('mute-btn').textContent = vol === 0 ? '🔇' : '🔊';
+    if (scWidget) scWidget.setVolume(vol);
+    else if (ytPlayer && ytPlayer.setVolume) ytPlayer.setVolume(vol);
+  });
+
+  ${isSC ? `
+  // SoundCloud Widget
+  function initSC() {
+    if (!window.SC || !window.SC.Widget) { setTimeout(initSC, 200); return; }
+    scWidget = SC.Widget(iframe);
+    scWidget.bind(SC.Widget.Events.READY, () => {
+      scWidget.setVolume(vol);
+      ${seekMs > 0 ? `scWidget.seekTo(${seekMs});` : ''}
+    });
+  }
+  initSC();
+  ` : ''}
+
+  ${isYT ? `
+  // YouTube Player
+  function onYouTubeIframeAPIReady() {
+    ytPlayer = new YT.Player(iframe, {
+      events: { onReady: (e) => { e.target.setVolume(vol); } }
+    });
+  }
+  if (window.YT && window.YT.Player) onYouTubeIframeAPIReady();
+  ` : ''}
+<\/script>
+</body></html>`);
+      popWin.document.close();
+
+      // Stop the original iframe so audio doesn't play in both windows
+      iframe.src = 'about:blank';
+
+      // Minimize the in-app panel while popped out
+      this._minimizeMusicPanel();
+      this._musicPopWin = popWin;
+
+      // Listen for pop-in message from the popup
+      const onPopIn = (e) => {
+        if (e.data && e.data.type === 'haven-music-popin') {
+          window.removeEventListener('message', onPopIn);
+          clearInterval(checkClosed);
+          if (this._musicActive) {
+            iframe.src = src;
+            const panel = document.getElementById('music-panel');
+            if (panel) panel.style.display = 'flex';
+            this._removeMusicIndicator();
+            // Re-init platform APIs
+            const reIframe = document.getElementById('music-iframe');
+            if (reIframe) {
+              if (src.includes('soundcloud.com')) this._initSoundCloudWidget(reIframe, volume);
+              else if (src.includes('youtube.com')) this._initYouTubePlayer(reIframe, volume);
+            }
+          }
+          this._musicPopWin = null;
+        }
+      };
+      window.addEventListener('message', onPopIn);
+
+      // When pop-out window closes (via X button), restore
+      const checkClosed = setInterval(() => {
+        if (popWin.closed) {
+          clearInterval(checkClosed);
+          window.removeEventListener('message', onPopIn);
+          if (this._musicActive) {
+            iframe.src = src;
+            this._showMusicIndicator();
+            // Re-init platform APIs
+            const reIframe = document.getElementById('music-iframe');
+            if (reIframe) {
+              if (src.includes('soundcloud.com')) this._initSoundCloudWidget(reIframe, volume);
+              else if (src.includes('youtube.com')) this._initYouTubePlayer(reIframe, volume);
+            }
+          }
+          this._musicPopWin = null;
+        }
+      }, 500);
+    };
+
+    // Try to get current playback position before opening popup
+    if (this._musicSCWidget) {
+      this._musicSCWidget.getPosition((pos) => { doPopOut(pos || 0); });
+    } else if (this._musicYTPlayer && this._musicYTPlayer.getCurrentTime) {
+      const secs = this._musicYTPlayer.getCurrentTime();
+      doPopOut(secs * 1000);
+    } else {
+      doPopOut(0);
+    }
   }
 
   _showMusicIndicator() {

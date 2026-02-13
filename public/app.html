@@ -214,13 +214,15 @@
           <!-- Music Player Panel -->
           <div id="music-panel" class="music-panel" style="display:none">
             <div class="music-panel-header">
-              <span id="music-panel-label">🎵 Listening Together</span>
+              <div class="music-panel-header-left">
+                <button id="music-popout-btn" class="icon-btn small" title="Pop out player">⧉</button>
+                <span id="music-panel-label">🎵 Listening Together</span>
+              </div>
               <div class="music-panel-controls">
                 <button id="music-play-pause-btn" class="icon-btn small" title="Play/Pause">⏸</button>
                 <button id="music-mute-btn" class="icon-btn small" title="Mute music">🔊</button>
                 <input type="range" id="music-volume-slider" class="stream-vol-slider" min="0" max="100" value="80" title="Music volume">
                 <button id="music-stop-btn" class="icon-btn small" title="Stop music">⏹</button>
-                <button id="music-popout-btn" class="icon-btn small" title="Pop out player">⧉</button>
                 <button id="music-close-btn" class="icon-btn small" title="Minimize">&times;</button>
               </div>
             </div>
