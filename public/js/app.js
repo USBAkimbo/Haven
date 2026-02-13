@@ -2930,20 +2930,20 @@ class HavenApp {
       bar = document.createElement('div');
       bar.id = 'hidden-streams-bar';
       bar.className = 'hidden-streams-bar';
-      // Insert bar after the grid
-      grid.parentNode.insertBefore(bar, grid.nextSibling);
+      // Insert inside voice-controls so it groups with other header buttons
+      document.querySelector('.voice-controls')?.appendChild(bar);
     }
 
-    bar.innerHTML = hiddenTiles.length + ' stream' + (hiddenTiles.length > 1 ? 's' : '') + ' hidden: ' +
-      Array.from(hiddenTiles).map(t => {
-        const lbl = t.querySelector('.screen-share-tile-label');
-        const name = lbl ? lbl.textContent : 'Stream';
-        return `<button class="hidden-stream-restore-btn" data-tile-id="${t.id}" title="Show ${name}'s stream">👁 ${name}</button>`;
-      }).join('');
+    bar.innerHTML = `<button class="hidden-stream-restore-btn" title="Show hidden streams">🖥 ${hiddenTiles.length} stream${hiddenTiles.length > 1 ? 's' : ''} hidden</button>`;
 
-    // Bind restore buttons
-    bar.querySelectorAll('.hidden-stream-restore-btn').forEach(btn => {
-      btn.addEventListener('click', () => this._showStreamTile(btn.dataset.tileId));
+    // Bind restore button — clicking it restores all hidden streams
+    bar.querySelector('.hidden-stream-restore-btn').addEventListener('click', () => {
+      hiddenTiles.forEach(t => {
+        t.style.display = '';
+        delete t.dataset.hidden;
+      });
+      this._updateHiddenStreamsBar();
+      this._updateScreenShareVisibility();
     });
 
     // Ensure container stays visible when streams are hidden
@@ -3378,22 +3378,20 @@ class HavenApp {
 
     const src = iframe.src;
     const platform = this._musicPlatform || 'Music';
-    const label = document.getElementById('music-panel-label')?.textContent || 'Haven Music';
 
     // Size based on platform
-    let w = 420, h = 200;
-    if (src.includes('spotify.com')) { w = 400; h = 180; }
-    else if (src.includes('soundcloud.com')) { w = 420; h = 200; }
-    else if (src.includes('youtube.com')) { w = 480; h = 300; }
+    let w = 420, h = 320;
+    if (src.includes('spotify.com')) { w = 400; h = 260; }
+    else if (src.includes('soundcloud.com')) { w = 420; h = 320; }
+    else if (src.includes('youtube.com')) { w = 480; h = 360; }
 
-    const popWin = window.open('', 'haven-music-popout', `width=${w},height=${h},resizable=yes`);
+    // Open the embed URL directly — gives native platform controls and
+    // preserves the user's widget state (position, volume) for SoundCloud/Spotify
+    const popWin = window.open(src, 'haven-music-popout', `width=${w},height=${h},resizable=yes`);
     if (!popWin) {
       this._showToast('Pop-up blocked — allow pop-ups for this site', 'error');
       return;
     }
-
-    popWin.document.write(`<!DOCTYPE html><html><head><title>Haven — ${this._escapeHtml(platform)}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1a1a2e;overflow:hidden;display:flex;align-items:center;justify-content:center;height:100vh}iframe{width:100%;height:100%;border:none}</style></head><body><iframe src="${this._escapeHtml(src)}" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></body></html>`);
-    popWin.document.close();
 
     // Stop the original iframe so audio doesn't play in both windows
     iframe.src = 'about:blank';
@@ -3406,7 +3404,6 @@ class HavenApp {
       if (popWin.closed) {
         clearInterval(checkClosed);
         if (this._musicActive) {
-          // Restore the original embed iframe so music continues in-app
           iframe.src = src;
           this._showMusicIndicator();
         }
@@ -3427,7 +3424,8 @@ class HavenApp {
       panel.style.display = 'flex';
       ind.remove();
     });
-    document.querySelector('.channel-header')?.appendChild(ind);
+    // Append inside voice-controls so it groups with other header buttons
+    document.querySelector('.voice-controls')?.appendChild(ind);
   }
 
   _removeMusicIndicator() {
