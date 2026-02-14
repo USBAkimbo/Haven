@@ -26,6 +26,7 @@ class VoiceManager {
     this.onScreenAudio = null;       // callback(userId) — screen share audio available
     this.talkingState = new Map();  // userId → boolean
     this.analysers = new Map();     // userId → { analyser, dataArray, interval }
+    this.onScreenShareStarted = null; // callback(userId, username) — someone started streaming
     this._localTalkInterval = null;
     this._noiseGateInterval = null;
     this._noiseGateGain = null;
@@ -136,6 +137,10 @@ class VoiceManager {
     // Someone started screen sharing
     this.socket.on('screen-share-started', (data) => {
       this.screenSharers.add(data.userId);
+      // Play stream start notification sound
+      if (this.onScreenShareStarted) {
+        this.onScreenShareStarted(data.userId, data.username);
+      }
       // Notify UI about audio availability for this stream
       if (!data.hasAudio && this.onScreenNoAudio) {
         this.onScreenNoAudio(data.userId);

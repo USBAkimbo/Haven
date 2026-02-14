@@ -78,6 +78,10 @@ class HavenApp {
       return;
     }
 
+    // Permission helper — true if user is admin or has mod role
+    this._canModerate = () => this.user.isAdmin || (this.user.effectiveLevel || 0) >= 25;
+    this._isServerMod = () => this.user.isAdmin || (this.user.effectiveLevel || 0) >= 50;
+
     this._init();
   }
 
@@ -99,8 +103,10 @@ class HavenApp {
     this._setupStatusPicker();
     this._setupFileUpload();
     this._setupIdleDetection();
-    this._setupAvatarUpload();
+    try { this._setupAvatarUpload(); } catch (e) { console.error('Avatar setup failed:', e); }
     this._setupSoundManagement();
+    this._initRoleManagement();
+    this._setupResizableSidebars();
 
     // CSP-safe image error handling (no inline onerror attributes)
     document.getElementById('messages')?.addEventListener('error', (e) => {
@@ -128,6 +134,8 @@ class HavenApp {
     // Authoritative user info pushed by server on every connect
     this.socket.on('session-info', (data) => {
       this.user = { ...this.user, ...data };
+      this.user.roles = data.roles || [];
+      this.user.effectiveLevel = data.effectiveLevel || 0;
       localStorage.setItem('haven_user', JSON.stringify(this.user));
       // Show server version in status bar
       if (data.version) {
@@ -140,13 +148,26 @@ class HavenApp {
       if (loginEl) loginEl.textContent = `@${this.user.username}`;
       // Update avatar preview in settings if present
       this._updateAvatarPreview();
+      // Show admin/mod controls based on role level
+      const canModerate = this.user.isAdmin || this.user.effectiveLevel >= 25;
       if (this.user.isAdmin) {
         document.getElementById('admin-controls').style.display = 'block';
         document.getElementById('admin-mod-panel').style.display = 'block';
       } else {
         document.getElementById('admin-controls').style.display = 'none';
-        document.getElementById('admin-mod-panel').style.display = 'none';
+        document.getElementById('admin-mod-panel').style.display = canModerate ? 'block' : 'none';
       }
+    });
+
+    // Roles updated (from admin assigning/revoking)
+    this.socket.on('roles-updated', (data) => {
+      this.user.roles = data.roles || [];
+      this.user.effectiveLevel = data.effectiveLevel || 0;
+      localStorage.setItem('haven_user', JSON.stringify(this.user));
+      // Refresh UI to reflect new permissions
+      const canModerate = this.user.isAdmin || this.user.effectiveLevel >= 25;
+      document.getElementById('admin-mod-panel').style.display = canModerate ? 'block' : 'none';
+      this._showToast('Your roles have been updated', 'info');
     });
 
     // Avatar updated confirmation
@@ -199,6 +220,13 @@ class HavenApp {
     this.socket.on('channels-list', (channels) => {
       this.channels = channels;
       this._renderChannels();
+    });
+
+    // Channel renamed — update header if we're in that channel
+    this.socket.on('channel-renamed', (data) => {
+      if (data.code === this.currentChannel) {
+        document.getElementById('channel-header-name').textContent = '# ' + data.name;
+      }
     });
 
     this.socket.on('channel-created', (channel) => {
@@ -741,6 +769,30 @@ class HavenApp {
       this._closeChannelCtxMenu();
       this.socket.emit('toggle-channel-permission', { code, permission: 'music' });
     });
+    // Create sub-channel
+    document.querySelector('[data-action="create-sub-channel"]')?.addEventListener('click', () => {
+      const code = this._ctxMenuChannel;
+      if (!code) return;
+      this._closeChannelCtxMenu();
+      const parentCh = this.channels.find(c => c.code === code);
+      if (!parentCh) return;
+      const name = prompt(`Create sub-channel under #${parentCh.name}:\nEnter sub-channel name:`);
+      if (name && name.trim()) {
+        this.socket.emit('create-sub-channel', { parentCode: code, name: name.trim() });
+      }
+    });
+    // Rename channel / sub-channel
+    document.querySelector('[data-action="rename-channel"]')?.addEventListener('click', () => {
+      const code = this._ctxMenuChannel;
+      if (!code) return;
+      this._closeChannelCtxMenu();
+      const ch = this.channels.find(c => c.code === code);
+      if (!ch) return;
+      const name = prompt(`Rename #${ch.name}:\nEnter new name:`, ch.name);
+      if (name && name.trim() && name.trim() !== ch.name) {
+        this.socket.emit('rename-channel', { code, name: name.trim() });
+      }
+    });
     // Close context menu on outside click
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.channel-ctx-menu') && !e.target.closest('.channel-more-btn')) {
@@ -853,6 +905,10 @@ class HavenApp {
     };
     this.voice.onVoiceLeave = (userId, username) => {
       this.notifications.playDirect('voice_leave');
+    };
+    // Wire up screen share start audio cue
+    this.voice.onScreenShareStarted = (userId, username) => {
+      this.notifications.playDirect('stream_start');
     };
 
     // Wire up talking indicator
@@ -1630,82 +1686,40 @@ class HavenApp {
   }
 
   _setupAvatarUpload() {
-    const uploadBtn = document.getElementById('avatar-upload-btn');
-    const removeBtn = document.getElementById('avatar-remove-btn');
-    const fileInput = document.getElementById('avatar-file-input');
-    if (!uploadBtn || !fileInput) return;
-
     this._updateAvatarPreview();
 
-    // Open file picker when button is clicked
-    uploadBtn.addEventListener('click', () => fileInput.click());
+    // Helper: wire up avatar upload for a given set of elements
+    const wireUpload = (btnId, inputId, removeBtnId) => {
+      const uploadBtn = document.getElementById(btnId);
+      const fileInput = document.getElementById(inputId);
+      const removeBtn = document.getElementById(removeBtnId);
+      if (!uploadBtn || !fileInput) return;
 
-    fileInput.addEventListener('change', async () => {
-      const file = fileInput.files[0];
-      if (!file) return;
-      if (file.size > 2 * 1024 * 1024) {
-        this._showToast('Avatar too large (max 2 MB)', 'error');
-        fileInput.value = '';
-        return;
-      }
-      if (!file.type.startsWith('image/')) {
-        this._showToast('Please select an image file', 'error');
-        fileInput.value = '';
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append('image', file);
-
-      try {
-        this._showToast('Uploading avatar...', 'info');
-        const res = await fetch('/api/upload-avatar', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${this.token}` },
-          body: formData
-        });
-        if (!res.ok) {
-          let errMsg = `Upload failed (${res.status})`;
-          try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
-          return this._showToast(errMsg, 'error');
-        }
-        const data = await res.json();
-        // Notify server via socket to update all connected clients
-        this.socket.emit('set-avatar', { url: data.url });
-      } catch {
-        this._showToast('Upload failed — check your connection', 'error');
-      }
-      fileInput.value = '';
-    });
-
-    if (removeBtn) {
-      removeBtn.addEventListener('click', () => {
-        this.socket.emit('set-avatar', { url: '' });
-      });
-    }
-
-    // Also wire up rename modal's avatar buttons
-    const renameUploadBtn = document.getElementById('rename-avatar-upload-btn');
-    const renameRemoveBtn = document.getElementById('rename-avatar-remove-btn');
-    const renameFileInput = document.getElementById('rename-avatar-file-input');
-    if (renameUploadBtn && renameFileInput) {
       // Open file picker when button is clicked
-      renameUploadBtn.addEventListener('click', () => renameFileInput.click());
-      renameFileInput.addEventListener('change', async () => {
-        const file = renameFileInput.files[0];
+      uploadBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fileInput.value = ''; // Reset so re-selecting same file triggers change
+        fileInput.click();
+      });
+
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files[0];
         if (!file) return;
         if (file.size > 2 * 1024 * 1024) {
           this._showToast('Avatar too large (max 2 MB)', 'error');
-          renameFileInput.value = '';
+          fileInput.value = '';
           return;
         }
         if (!file.type.startsWith('image/')) {
           this._showToast('Please select an image file', 'error');
-          renameFileInput.value = '';
+          fileInput.value = '';
           return;
         }
+
         const formData = new FormData();
         formData.append('image', file);
+
         try {
           this._showToast('Uploading avatar...', 'info');
           const res = await fetch('/api/upload-avatar', {
@@ -1719,18 +1733,24 @@ class HavenApp {
             return this._showToast(errMsg, 'error');
           }
           const data = await res.json();
+          // Notify server via socket to update all connected clients
           this.socket.emit('set-avatar', { url: data.url });
         } catch {
           this._showToast('Upload failed — check your connection', 'error');
         }
-        renameFileInput.value = '';
+        fileInput.value = '';
       });
-    }
-    if (renameRemoveBtn) {
-      renameRemoveBtn.addEventListener('click', () => {
-        this.socket.emit('set-avatar', { url: '' });
-      });
-    }
+
+      if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+          this.socket.emit('set-avatar', { url: '' });
+        });
+      }
+    };
+
+    // Wire both settings modal and rename/profile modal avatar uploads
+    wireUpload('avatar-upload-btn', 'avatar-file-input', 'avatar-remove-btn');
+    wireUpload('rename-avatar-upload-btn', 'rename-avatar-file-input', 'rename-avatar-remove-btn');
   }
 
   // ═══════════════════════════════════════════════════════
@@ -2138,9 +2158,19 @@ class HavenApp {
     if (!menu) return;
     // Show/hide admin-only items
     const isAdmin = this.user && this.user.isAdmin;
+    const isMod = isAdmin || this._canModerate();
     menu.querySelectorAll('.admin-only').forEach(el => {
       el.style.display = isAdmin ? '' : 'none';
     });
+    menu.querySelectorAll('.mod-only').forEach(el => {
+      el.style.display = isMod ? '' : 'none';
+    });
+    // Hide "Create Sub-channel" if this is already a sub-channel
+    const ch = this.channels.find(c => c.code === code);
+    const createSubBtn = menu.querySelector('[data-action="create-sub-channel"]');
+    if (createSubBtn && ch && ch.parent_channel_id) {
+      createSubBtn.style.display = 'none';
+    }
     // Update mute label
     const muted = JSON.parse(localStorage.getItem('haven_muted_channels') || '[]');
     const muteBtn = menu.querySelector('[data-action="mute"]');
@@ -2170,16 +2200,44 @@ class HavenApp {
     const regularChannels = this.channels.filter(c => !c.is_dm);
     const dmChannels = this.channels.filter(c => c.is_dm);
 
-    // Regular channels
-    regularChannels.forEach(ch => {
+    // Build parent → sub-channel tree
+    const parentChannels = regularChannels.filter(c => !c.parent_channel_id);
+    const subChannelMap = {};
+    regularChannels.filter(c => c.parent_channel_id).forEach(c => {
+      if (!subChannelMap[c.parent_channel_id]) subChannelMap[c.parent_channel_id] = [];
+      subChannelMap[c.parent_channel_id].push(c);
+    });
+    // Sort sub-channels by position
+    Object.values(subChannelMap).forEach(arr => arr.sort((a, b) => (a.position || 0) - (b.position || 0)));
+
+    const renderChannelItem = (ch, isSub) => {
       const el = document.createElement('div');
-      el.className = 'channel-item' + (ch.code === this.currentChannel ? ' active' : '');
+      el.className = 'channel-item' + (isSub ? ' sub-channel-item' : '') + (ch.code === this.currentChannel ? ' active' : '');
       el.dataset.code = ch.code;
+      if (isSub) el.dataset.parentId = ch.parent_channel_id;
+
+      const hasSubs = !isSub && (subChannelMap[ch.id] || []).length > 0;
+      const isCollapsed = hasSubs && localStorage.getItem(`haven_subs_collapsed_${ch.code}`) === 'true';
+
       el.innerHTML = `
-        <span class="channel-hash">#</span>
+        <span class="channel-hash${hasSubs ? ' has-subs' : ''}${isCollapsed ? ' collapsed' : ''}" title="${hasSubs ? 'Click to expand/collapse sub-channels' : ''}">${isSub ? '↳' : '#'}</span>
         <span class="channel-name">${this._escapeHtml(ch.name)}</span>
         <button class="channel-more-btn" title="Channel options">⋯</button>
       `;
+
+      // If parent has sub-channels, clicking the # toggles them
+      if (hasSubs) {
+        const hash = el.querySelector('.channel-hash');
+        hash.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const collapsed = hash.classList.toggle('collapsed');
+          localStorage.setItem(`haven_subs_collapsed_${ch.code}`, collapsed);
+          // Toggle visibility of all sub-channel items for this parent
+          document.querySelectorAll(`.sub-channel-item[data-parent-id="${ch.id}"]`).forEach(sub => {
+            sub.style.display = collapsed ? 'none' : '';
+          });
+        });
+      }
 
       const count = this.unreadCounts[ch.code] || ch.unreadCount || 0;
       if (count > 0) {
@@ -2190,7 +2248,19 @@ class HavenApp {
       }
 
       el.addEventListener('click', () => this.switchChannel(ch.code));
-      list.appendChild(el);
+      return el;
+    };
+
+    // Regular channels with sub-channels nested beneath parents
+    parentChannels.forEach(ch => {
+      list.appendChild(renderChannelItem(ch, false));
+      const subs = subChannelMap[ch.id] || [];
+      const isCollapsed = localStorage.getItem(`haven_subs_collapsed_${ch.code}`) === 'true';
+      subs.forEach(sub => {
+        const subEl = renderChannelItem(sub, true);
+        if (isCollapsed) subEl.style.display = 'none';
+        list.appendChild(subEl);
+      });
     });
 
     // DM section (collapsible)
@@ -2405,7 +2475,9 @@ class HavenApp {
 
     // Build toolbar with context-aware buttons
     let toolbarBtns = `<button data-action="react" title="React">😀</button><button data-action="reply" title="Reply">↩️</button>`;
-    if (this.user.isAdmin) {
+    const canPin = this.user.isAdmin || this._canModerate();
+    const canDelete = msg.user_id === this.user.id || this.user.isAdmin || this._canModerate();
+    if (canPin) {
       toolbarBtns += msg.pinned
         ? `<button data-action="unpin" title="Unpin">📌</button>`
         : `<button data-action="pin" title="Pin">📌</button>`;
@@ -2413,7 +2485,7 @@ class HavenApp {
     if (msg.user_id === this.user.id) {
       toolbarBtns += `<button data-action="edit" title="Edit">✏️</button>`;
     }
-    if (msg.user_id === this.user.id || this.user.isAdmin) {
+    if (canDelete) {
       toolbarBtns += `<button data-action="delete" title="Delete">🗑️</button>`;
     }
     const toolbarHtml = `<div class="msg-toolbar">${toolbarBtns}</div>`;
@@ -2442,6 +2514,12 @@ class HavenApp {
       ? `<img class="message-avatar message-avatar-img" src="${this._escapeHtml(msg.avatar)}" alt="${initial}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="message-avatar" style="background-color:${color};display:none">${initial}</div>`
       : `<div class="message-avatar" style="background-color:${color}">${initial}</div>`;
 
+    // Look up user's role from online users list
+    const onlineUser = this.users ? this.users.find(u => u.id === msg.user_id) : null;
+    const msgRoleBadge = onlineUser && onlineUser.role
+      ? `<span class="user-role-badge msg-role-badge" style="color:${onlineUser.role.color || 'var(--text-muted)'}">${this._escapeHtml(onlineUser.role.name)}</span>`
+      : '';
+
     const el = document.createElement('div');
     el.className = 'message' + (isImage ? ' message-has-image' : '') + (msg.pinned ? ' pinned' : '');
     el.dataset.userId = msg.user_id;
@@ -2455,6 +2533,7 @@ class HavenApp {
         <div class="message-body">
           <div class="message-header">
             <span class="message-author" style="color:${color}">${this._escapeHtml(msg.username)}</span>
+            ${msgRoleBadge}
             <span class="message-time">${this._formatTime(msg.created_at)}</span>
             ${pinnedTag}
           </div>
@@ -2619,15 +2698,20 @@ class HavenApp {
 
     el.innerHTML = html;
 
-    // Bind admin action buttons
-    if (this.user.isAdmin) {
+    // Bind admin/mod action buttons
+    if (this.user.isAdmin || this._canModerate()) {
       el.querySelectorAll('.user-action-btn[data-action]').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const action = btn.dataset.action;
           const userId = parseInt(btn.dataset.uid);
           const username = btn.dataset.uname;
-          this._showAdminActionModal(action, userId, username);
+          if (action === 'assign-role') {
+            this._loadRoles();
+            this._openAssignRoleModal(userId, username);
+          } else {
+            this._showAdminActionModal(action, userId, username);
+          }
         });
       });
     }
@@ -2674,25 +2758,48 @@ class HavenApp {
     // Wrap avatar + status dot together (Discord-style overlay)
     const avatarHtml = `<div class="user-avatar-wrapper">${avatarImg}<span class="user-status-dot${statusClass ? ' ' + statusClass : ''}"></span></div>`;
 
+    // Role: color dot to the left of name + tooltip on hover
+    const roleColor = u.role ? (u.role.color || 'var(--text-muted)') : '';
+    const roleDot = u.role
+      ? `<span class="user-role-dot" style="background:${roleColor}" title="${this._escapeHtml(u.role.name)}"></span>`
+      : '';
+
+    // Keep the old badge for message area (msg-role-badge) but hide in sidebar
+    const roleBadge = u.role
+      ? `<span class="user-role-badge" style="color:${u.role.color || 'var(--text-muted)'}" title="${this._escapeHtml(u.role.name)}">${this._escapeHtml(u.role.name)}</span>`
+      : '';
+
+    // Build tooltip
+    const tooltipRole = u.role ? `<div class="tooltip-role" style="color:${roleColor}">● ${this._escapeHtml(u.role.name)}</div>` : '';
+    const tooltipStatus = u.statusText ? `<div class="tooltip-status">${this._escapeHtml(u.statusText)}</div>` : '';
+    const tooltipOnline = u.online === false ? '<div class="tooltip-status">Offline</div>' : '';
+    const tooltip = `<div class="user-item-tooltip"><div class="tooltip-username">${this._escapeHtml(u.username)}</div>${tooltipRole}${tooltipStatus}${tooltipOnline}</div>`;
+
     const dmBtn = u.id !== this.user.id
       ? `<button class="user-action-btn user-dm-btn" data-dm-uid="${u.id}" title="Direct Message">💬</button>`
       : '';
 
-    const adminBtns = this.user.isAdmin && u.id !== this.user.id
+    // Show mod actions for admins AND users with mod roles (kick/mute for mods, ban only for admins)
+    const canModThis = (this.user.isAdmin || this._canModerate()) && u.id !== this.user.id;
+    const modBtns = canModThis
       ? `<div class="user-admin-actions">
            ${dmBtn}
+           ${this.user.isAdmin ? `<button class="user-action-btn" data-action="assign-role" data-uid="${u.id}" data-uname="${this._escapeHtml(u.username)}" title="Assign Role">👑</button>` : ''}
            <button class="user-action-btn" data-action="kick" data-uid="${u.id}" data-uname="${this._escapeHtml(u.username)}" title="Kick">👢</button>
            <button class="user-action-btn" data-action="mute" data-uid="${u.id}" data-uname="${this._escapeHtml(u.username)}" title="Mute">🔇</button>
-           <button class="user-action-btn" data-action="ban" data-uid="${u.id}" data-uname="${this._escapeHtml(u.username)}" title="Ban">⛔</button>
+           ${this.user.isAdmin ? `<button class="user-action-btn" data-action="ban" data-uid="${u.id}" data-uname="${this._escapeHtml(u.username)}" title="Ban">⛔</button>` : ''}
          </div>`
       : (dmBtn ? `<div class="user-admin-actions">${dmBtn}</div>` : '');
     return `
       <div class="user-item${onlineClass}">
         ${avatarHtml}
+        ${roleDot}
         <span class="user-item-name">${this._escapeHtml(u.username)}</span>
+        ${roleBadge}
         ${statusTextHtml}
         ${scoreBadge}
-        ${adminBtns}
+        ${modBtns}
+        ${tooltip}
       </div>
     `;
   }
@@ -2757,6 +2864,7 @@ class HavenApp {
     // voice.join() auto-leaves old channel if connected
     const success = await this.voice.join(this.currentChannel);
     if (success) {
+      this.notifications.playDirect('voice_join');
       this._updateVoiceButtons(true);
       this._updateVoiceStatus(true);
       this._updateVoiceBar();
@@ -5097,6 +5205,248 @@ class HavenApp {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // ── Resizable Sidebars ─────────────────────────────────
+
+  _setupResizableSidebars() {
+    // Left sidebar resize
+    const sidebar = document.querySelector('.sidebar');
+    const leftHandle = document.getElementById('sidebar-resize-handle');
+    if (sidebar && leftHandle) {
+      const savedLeft = localStorage.getItem('haven_sidebar_width');
+      if (savedLeft) sidebar.style.width = savedLeft + 'px';
+
+      let dragging = false;
+      leftHandle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        dragging = true;
+        leftHandle.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        // Account for the server bar width (~52px)
+        const serverBar = document.querySelector('.server-bar');
+        const offset = serverBar ? serverBar.offsetWidth : 52;
+        let w = e.clientX - offset;
+        w = Math.max(200, Math.min(400, w));
+        sidebar.style.width = w + 'px';
+      });
+      document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        leftHandle.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem('haven_sidebar_width', parseInt(sidebar.style.width));
+      });
+    }
+
+    // Right sidebar resize
+    const rightSidebar = document.getElementById('right-sidebar');
+    const rightHandle = document.getElementById('right-sidebar-resize-handle');
+    if (rightSidebar && rightHandle) {
+      const savedRight = localStorage.getItem('haven_right_sidebar_width');
+      if (savedRight) rightSidebar.style.width = savedRight + 'px';
+
+      let dragging = false;
+      rightHandle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        dragging = true;
+        rightHandle.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        let w = window.innerWidth - e.clientX;
+        w = Math.max(200, Math.min(400, w));
+        rightSidebar.style.width = w + 'px';
+      });
+      document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        rightHandle.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem('haven_right_sidebar_width', parseInt(rightSidebar.style.width));
+      });
+    }
+  }
+
+  // ── Role Management ───────────────────────────────────
+  // ═══════════════════════════════════════════════════════
+
+  _initRoleManagement() {
+    this._allRoles = [];
+    this._selectedRoleId = null;
+
+    // Open role editor modal
+    document.getElementById('open-role-editor-btn')?.addEventListener('click', () => {
+      this._openRoleModal();
+    });
+    document.getElementById('close-role-modal-btn')?.addEventListener('click', () => {
+      document.getElementById('role-modal').style.display = 'none';
+    });
+    document.getElementById('create-role-btn')?.addEventListener('click', () => {
+      const name = prompt('Enter role name:');
+      if (!name || !name.trim()) return;
+      const level = parseInt(prompt('Role level (1-99, higher = more authority):\nServer Mod default = 50, Channel Mod default = 25', '25'), 10);
+      if (isNaN(level) || level < 1 || level > 99) { this._showToast('Level must be 1-99', 'error'); return; }
+      this.socket.emit('create-role', { name: name.trim(), level, color: '#aaaaaa' }, (res) => {
+        if (res.error) { this._showToast(res.error, 'error'); return; }
+        this._showToast('Role created', 'success');
+        this._loadRoles();
+      });
+    });
+
+    // Assign role modal handlers
+    document.getElementById('cancel-assign-role-btn')?.addEventListener('click', () => {
+      document.getElementById('assign-role-modal').style.display = 'none';
+    });
+    document.getElementById('confirm-assign-role-btn')?.addEventListener('click', () => {
+      const roleId = document.getElementById('assign-role-select').value;
+      const userId = document.getElementById('assign-role-modal').dataset.userId;
+      const scope = document.getElementById('assign-role-scope').value;
+      if (!roleId || !userId) return;
+      const channelId = scope !== 'server' ? parseInt(scope, 10) : null;
+      this.socket.emit('assign-role', { userId: parseInt(userId, 10), roleId: parseInt(roleId, 10), channelId }, (res) => {
+        if (res.error) { this._showToast(res.error, 'error'); return; }
+        this._showToast('Role assigned', 'success');
+        document.getElementById('assign-role-modal').style.display = 'none';
+      });
+    });
+
+    // Listen for role updates
+    this.socket.on('roles-updated', () => this._loadRoles());
+  }
+
+  _loadRoles() {
+    this.socket.emit('get-roles', {}, (res) => {
+      if (res.error) return;
+      this._allRoles = res.roles || [];
+      this._renderRolesPreview();
+      if (document.getElementById('role-modal').style.display !== 'none') {
+        this._renderRoleSidebar();
+      }
+    });
+  }
+
+  _renderRolesPreview() {
+    const container = document.getElementById('roles-list-preview');
+    if (!container) return;
+    if (this._allRoles.length === 0) {
+      container.innerHTML = '<p class="muted-text">No custom roles</p>';
+      return;
+    }
+    container.innerHTML = this._allRoles.map(r =>
+      `<div class="role-preview-item">
+        <span class="role-color-dot" style="background:${r.color || '#aaa'}"></span>
+        <span>${this._escapeHtml(r.name)}</span>
+        <span class="muted-text" style="font-size:11px;margin-left:auto">Lv.${r.level}</span>
+      </div>`
+    ).join('');
+  }
+
+  _openRoleModal() {
+    document.getElementById('role-modal').style.display = 'flex';
+    this._loadRoles();
+  }
+
+  _renderRoleSidebar() {
+    const list = document.getElementById('role-list-sidebar');
+    if (!list) return;
+    list.innerHTML = this._allRoles.map(r =>
+      `<div class="role-sidebar-item${this._selectedRoleId === r.id ? ' active' : ''}" data-role-id="${r.id}">
+        <span class="role-color-dot" style="background:${r.color || '#aaa'}"></span>
+        ${this._escapeHtml(r.name)}
+      </div>`
+    ).join('');
+    list.querySelectorAll('.role-sidebar-item').forEach(el => {
+      el.addEventListener('click', () => {
+        this._selectedRoleId = parseInt(el.dataset.roleId, 10);
+        this._renderRoleSidebar();
+        this._renderRoleDetail();
+      });
+    });
+  }
+
+  _renderRoleDetail() {
+    const panel = document.getElementById('role-detail-panel');
+    const role = this._allRoles.find(r => r.id === this._selectedRoleId);
+    if (!role) { panel.innerHTML = '<p class="muted-text" style="padding:20px;text-align:center">Select a role</p>'; return; }
+
+    const allPerms = ['kick_user', 'mute_user', 'delete_message', 'pin_message', 'set_channel_topic', 'manage_sub_channels', 'ban_user'];
+    const rolePerms = role.permissions || [];
+
+    panel.innerHTML = `
+      <div class="role-detail-form">
+        <label class="settings-label">Name</label>
+        <input type="text" class="settings-text-input" id="role-edit-name" value="${this._escapeHtml(role.name)}" maxlength="30">
+        <label class="settings-label" style="margin-top:8px;">Level (1-99)</label>
+        <input type="number" class="settings-number-input" id="role-edit-level" value="${role.level}" min="1" max="99">
+        <label class="settings-label" style="margin-top:8px;">Color</label>
+        <input type="color" id="role-edit-color" value="${role.color || '#aaaaaa'}" style="width:50px;height:30px;border:none;cursor:pointer">
+        <h5 class="settings-section-subtitle" style="margin-top:12px;">Permissions</h5>
+        ${allPerms.map(p => `
+          <label class="toggle-row">
+            <span>${p.replace(/_/g, ' ')}</span>
+            <input type="checkbox" class="role-perm-checkbox" data-perm="${p}" ${rolePerms.includes(p) ? 'checked' : ''}>
+          </label>
+        `).join('')}
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn-sm btn-accent" id="save-role-btn">Save</button>
+          <button class="btn-sm danger" id="delete-role-btn">Delete</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('save-role-btn').addEventListener('click', () => {
+      const perms = [...panel.querySelectorAll('.role-perm-checkbox:checked')].map(cb => cb.dataset.perm);
+      this.socket.emit('update-role', {
+        roleId: role.id,
+        name: document.getElementById('role-edit-name').value.trim(),
+        level: parseInt(document.getElementById('role-edit-level').value, 10),
+        color: document.getElementById('role-edit-color').value,
+        permissions: perms
+      }, (res) => {
+        if (res.error) { this._showToast(res.error, 'error'); return; }
+        this._showToast('Role updated', 'success');
+        this._loadRoles();
+      });
+    });
+
+    document.getElementById('delete-role-btn').addEventListener('click', () => {
+      if (!confirm(`Delete role "${role.name}"? Users with this role will lose it.`)) return;
+      this.socket.emit('delete-role', { roleId: role.id }, (res) => {
+        if (res.error) { this._showToast(res.error, 'error'); return; }
+        this._showToast('Role deleted', 'success');
+        this._selectedRoleId = null;
+        this._loadRoles();
+        this._renderRoleDetail();
+      });
+    });
+  }
+
+  _openAssignRoleModal(userId, username) {
+    const modal = document.getElementById('assign-role-modal');
+    modal.dataset.userId = userId;
+    document.getElementById('assign-role-user-label').textContent = `Assigning role to: ${username}`;
+    // Populate role select
+    const sel = document.getElementById('assign-role-select');
+    sel.innerHTML = '<option value="">-- Select Role --</option>' + this._allRoles.map(r =>
+      `<option value="${r.id}">${this._escapeHtml(r.name)} (Lv.${r.level})</option>`
+    ).join('');
+    // Populate scope (server or per-channel)
+    const scopeSel = document.getElementById('assign-role-scope');
+    const nonDmChannels = this.channels.filter(c => !c.is_dm);
+    scopeSel.innerHTML = '<option value="server">Server-wide</option>' + nonDmChannels.map(c =>
+      `<option value="${c.id}"># ${this._escapeHtml(c.name)}</option>`
+    ).join('');
+    modal.style.display = 'flex';
   }
 
   // ═══════════════════════════════════════════════════════

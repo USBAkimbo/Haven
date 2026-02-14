@@ -42,8 +42,8 @@
   --radius:        8px;
   --radius-sm:     4px;
   --transition:    0.15s ease;
-  --sidebar-width: 250px;
-  --right-width:   220px;
+  --sidebar-width: 270px;
+  --right-width:   260px;
 
   --theme-logo:    "⬡";
   --msg-glow:      none;
@@ -1925,12 +1925,32 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 
 .sidebar {
   width: var(--sidebar-width);
-  min-width: var(--sidebar-width);
+  min-width: 200px;
+  max-width: 400px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+/* Resize handle (right edge of left sidebar) */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.15s;
+}
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle.dragging {
+  background: var(--accent);
+  opacity: 0.5;
 }
 
 .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
@@ -2605,12 +2625,32 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 
 .right-sidebar {
   width: var(--right-width);
-  min-width: var(--right-width);
+  min-width: 200px;
+  max-width: 400px;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  position: relative;
+}
+
+/* Resize handle (left edge of right sidebar) */
+.right-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.15s;
+}
+.right-sidebar-resize-handle:hover,
+.right-sidebar-resize-handle.dragging {
+  background: var(--accent);
+  opacity: 0.5;
 }
 
 .panel { padding: 16px; border-bottom: 1px solid var(--border); }
@@ -2634,6 +2674,11 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   gap: 8px;
   padding: 4px 6px;
   border-radius: var(--radius-sm);
+  position: relative;
+}
+
+.user-item:hover {
+  background: var(--bg-hover);
 }
 
 .user-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
@@ -2645,6 +2690,64 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Role color dot (to the left of the username, inside avatar wrapper) */
+.user-role-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.3);
+}
+
+/* User tooltip (shown on hover over name) */
+.user-item-tooltip {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  z-index: 1000;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  font-size: 12px;
+  color: var(--text-primary);
+  max-width: 220px;
+}
+.user-item-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--border-light);
+}
+.user-item:hover .user-item-tooltip {
+  display: block;
+}
+.tooltip-username {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.tooltip-role {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.tooltip-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 2px;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -6367,4 +6470,132 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 .music-search-picker-cancel:hover {
   background: rgba(255,255,255,0.15);
   color: var(--text-primary, #eee);
+}
+
+/* ── Sub-channel styling ─────────────────────────────── */
+.sub-channel-item {
+  padding-left: 28px !important;
+  font-size: 13px;
+}
+.sub-channel-item .channel-hash {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.sub-channel-item .channel-name {
+  font-size: 13px;
+}
+
+/* ── Role badge (user list & messages) ───────────────── */
+.user-role-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  margin-left: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  /* Hidden in sidebar user list — role shown via dot + tooltip instead */
+  display: none;
+}
+.msg-role-badge {
+  font-size: 9px;
+  vertical-align: middle;
+  margin-left: 4px;
+  /* Always show in messages */
+  display: inline;
+}
+
+/* ── Collapsible sub-channel toggle ──────────────────── */
+.channel-hash.has-subs {
+  cursor: pointer;
+  transition: transform 0.15s ease, color 0.15s;
+  user-select: none;
+}
+.channel-hash.has-subs:hover {
+  color: var(--accent);
+}
+.channel-hash.has-subs::before {
+  content: '▾';
+  display: inline-block;
+  font-size: 9px;
+  margin-right: 2px;
+  transition: transform 0.15s ease;
+}
+.channel-hash.has-subs.collapsed::before {
+  transform: rotate(-90deg);
+}
+
+/* ── Role management modal ───────────────────────────── */
+.role-editor-layout {
+  display: flex;
+  gap: 16px;
+  min-height: 340px;
+  margin: 12px 0;
+}
+.role-sidebar {
+  width: 180px;
+  border-right: 1px solid var(--border, #333);
+  padding-right: 12px;
+  flex-shrink: 0;
+}
+.role-list-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.role-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.role-sidebar-item:hover {
+  background: rgba(255,255,255,0.06);
+}
+.role-sidebar-item.active {
+  background: var(--accent, #5865f2);
+  color: #fff;
+}
+.role-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.role-detail {
+  flex: 1;
+  min-width: 0;
+}
+.role-detail-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.role-detail-form .settings-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted, #888);
+  margin-top: 4px;
+}
+.role-detail-form .toggle-row {
+  font-size: 13px;
+}
+
+/* ── Role preview in admin settings ──────────────────── */
+.role-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 13px;
 }

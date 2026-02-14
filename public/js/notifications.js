@@ -86,6 +86,7 @@ class NotificationManager {
   deafen_off() { this._playTone([250, 350, 500], [0.05, 0.06, 0.08], 'sine'); }
   voice_join() { this._playTone([440, 554, 659], [0.08, 0.08, 0.14], 'sine'); }
   voice_leave(){ this._playTone([659, 554, 440], [0.08, 0.08, 0.14], 'triangle'); }
+  stream_start() { this._playTone([523, 784, 1047], [0.06, 0.06, 0.12], 'sine'); }
 
   // ── AIM Classic Sounds (synthesized approximations) ────
 

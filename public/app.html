@@ -32,6 +32,7 @@
 
       <!-- ─── Left Sidebar ────────────────────────────── -->
       <aside class="sidebar">
+        <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
         <div class="sidebar-header">
           <div class="brand">
             <span class="logo-sm">⬡</span>
@@ -301,6 +302,7 @@
 
       <!-- ─── Right Sidebar ───────────────────────────── -->
       <aside class="right-sidebar" id="right-sidebar">
+        <div class="right-sidebar-resize-handle" id="right-sidebar-resize-handle"></div>
         <div class="panel">
           <h5 class="panel-title">🔊 Voice</h5>
           <button id="voice-join-mobile" class="btn-voice mobile-voice-join" style="display:none">🎤 Join Voice</button>
@@ -659,11 +661,60 @@
             </div>
           </div>
         </div>
+        <!-- Role Management (Admin only) -->
+        <div class="admin-settings" id="role-mgmt-section" style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
+          <h5 class="settings-section-subtitle">👑 Role Management</h5>
+          <small class="settings-hint">Create and manage roles. Assign roles to users from the user list context menu.</small>
+          <div style="margin-top:8px;">
+            <button class="btn-sm btn-full btn-accent" id="open-role-editor-btn">⚙️ Manage Roles</button>
+          </div>
+          <div id="roles-list-preview" style="margin-top:8px;">
+            <p class="muted-text">Loading roles...</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Bans List Modal -->
+  <!-- Role Management Modal -->
+  <div class="modal-overlay" id="role-modal" style="display:none">
+    <div class="modal modal-wide">
+      <h3>👑 Role Management</h3>
+      <div class="role-editor-layout">
+        <div class="role-sidebar">
+          <div id="role-list-sidebar" class="role-list-sidebar"></div>
+          <button class="btn-sm btn-accent btn-full" id="create-role-btn" style="margin-top:8px;">+ New Role</button>
+        </div>
+        <div class="role-detail" id="role-detail-panel">
+          <p class="muted-text" style="padding:20px;text-align:center">Select a role to edit</p>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-sm" id="close-role-modal-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assign Role Modal -->
+  <div class="modal-overlay" id="assign-role-modal" style="display:none">
+    <div class="modal">
+      <h3>👑 Assign Role</h3>
+      <p id="assign-role-user-label" class="muted-text"></p>
+      <select id="assign-role-select" class="settings-select" style="width:100%;margin:10px 0;padding:8px">
+        <option value="">-- Select Role --</option>
+      </select>
+      <label class="select-row" id="assign-role-channel-row" style="margin-top:8px;">
+        <span>Scope</span>
+        <select id="assign-role-scope" class="settings-select" style="padding:6px">
+          <option value="server">Server-wide</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button class="btn-sm" id="cancel-assign-role-btn">Cancel</button>
+        <button class="btn-sm btn-accent" id="confirm-assign-role-btn">Assign</button>
+      </div>
+    </div>
+  </div>
   <div class="modal-overlay" id="bans-modal" style="display:none">
     <div class="modal modal-wide">
       <h3>Banned Users</h3>
@@ -702,6 +753,9 @@
   <div id="channel-ctx-menu" class="channel-ctx-menu" style="display:none">
     <button class="channel-ctx-item" data-action="mute">🔔 Mute Channel</button>
     <hr class="channel-ctx-sep">
+    <button class="channel-ctx-item mod-only" data-action="rename-channel">✏️ Rename Channel</button>
+    <button class="channel-ctx-item mod-only" data-action="create-sub-channel">📁 Create Sub-channel</button>
+    <hr class="channel-ctx-sep mod-only">
     <button class="channel-ctx-item admin-only" data-action="toggle-streams">🖥️ Toggle Streams</button>
     <button class="channel-ctx-item admin-only" data-action="toggle-music">🎵 Toggle Music</button>
     <hr class="channel-ctx-sep admin-only">

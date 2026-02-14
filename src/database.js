@@ -250,10 +250,77 @@ function initDatabase() {
     { name: 'code_rotation_type',     sql: "ALTER TABLE channels ADD COLUMN code_rotation_type TEXT DEFAULT 'time'" },
     { name: 'code_rotation_interval', sql: "ALTER TABLE channels ADD COLUMN code_rotation_interval INTEGER DEFAULT 60" },
     { name: 'code_rotation_counter',  sql: "ALTER TABLE channels ADD COLUMN code_rotation_counter INTEGER DEFAULT 0" },
-    { name: 'code_last_rotated',      sql: "ALTER TABLE channels ADD COLUMN code_last_rotated DATETIME DEFAULT CURRENT_TIMESTAMP" },
+    { name: 'code_last_rotated',      sql: "ALTER TABLE channels ADD COLUMN code_last_rotated DATETIME DEFAULT NULL" },
   ];
   for (const col of codeSettingsCols) {
     try { db.prepare(`SELECT ${col.name} FROM channels LIMIT 0`).get(); } catch { db.exec(col.sql); }
+  }
+
+  // ── Migration: sub-channels (parent_channel_id, position) ──
+  try {
+    db.prepare("SELECT parent_channel_id FROM channels LIMIT 0").get();
+  } catch {
+    db.exec("ALTER TABLE channels ADD COLUMN parent_channel_id INTEGER DEFAULT NULL REFERENCES channels(id) ON DELETE SET NULL");
+  }
+  try {
+    db.prepare("SELECT position FROM channels LIMIT 0").get();
+  } catch {
+    db.exec("ALTER TABLE channels ADD COLUMN position INTEGER DEFAULT 0");
+  }
+
+  // ── Migration: roles system ─────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      level INTEGER NOT NULL DEFAULT 0,
+      scope TEXT NOT NULL DEFAULT 'server',
+      color TEXT DEFAULT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS user_roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      channel_id INTEGER DEFAULT NULL REFERENCES channels(id) ON DELETE CASCADE,
+      granted_by INTEGER REFERENCES users(id),
+      granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, role_id, channel_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      permission TEXT NOT NULL,
+      allowed INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (role_id, permission)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_roles_user ON user_roles(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_roles_channel ON user_roles(channel_id);
+  `);
+
+  // Seed default roles if none exist
+  const roleCount = db.prepare('SELECT COUNT(*) as cnt FROM roles').get();
+  if (roleCount.cnt === 0) {
+    const insertRole = db.prepare('INSERT INTO roles (name, level, scope, color) VALUES (?, ?, ?, ?)');
+    const insertPerm = db.prepare('INSERT INTO role_permissions (role_id, permission, allowed) VALUES (?, ?, 1)');
+
+    // Server Mod — level 50 (below admin which is implied level 100)
+    const serverMod = insertRole.run('Server Mod', 50, 'server', '#3498db');
+    const serverModPerms = [
+      'kick_user', 'mute_user', 'delete_message', 'pin_message',
+      'set_channel_topic', 'manage_sub_channels'
+    ];
+    serverModPerms.forEach(p => insertPerm.run(serverMod.lastInsertRowid, p));
+
+    // Channel Mod — level 25 (channel-scoped)
+    const channelMod = insertRole.run('Channel Mod', 25, 'channel', '#2ecc71');
+    const channelModPerms = [
+      'kick_user', 'mute_user', 'delete_message', 'pin_message',
+      'manage_sub_channels'
+    ];
+    channelModPerms.forEach(p => insertPerm.run(channelMod.lastInsertRowid, p));
   }
 
   return db;
