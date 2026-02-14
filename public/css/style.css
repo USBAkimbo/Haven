@@ -1892,14 +1892,23 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 
 .auth-theme-bar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   margin-top: 20px;
-  padding-top: 16px;
+  padding: 16px 12px 0;
   border-top: 1px solid var(--border);
+  max-width: 360px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
-.auth-theme-bar .theme-btn { width: 24px; height: 24px; font-size: 10px; }
+.auth-theme-bar .theme-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
 
 
 /* ═══════════════════════════════════════════════════════════

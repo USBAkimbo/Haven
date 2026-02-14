@@ -103,7 +103,7 @@ class HavenApp {
     this._setupStatusPicker();
     this._setupFileUpload();
     this._setupIdleDetection();
-    try { this._setupAvatarUpload(); } catch (e) { console.error('Avatar setup failed:', e); }
+    this._setupAvatarUpload();
     this._setupSoundManagement();
     this._initRoleManagement();
     this._setupResizableSidebars();
@@ -1693,10 +1693,17 @@ class HavenApp {
       const uploadBtn = document.getElementById(btnId);
       const fileInput = document.getElementById(inputId);
       const removeBtn = document.getElementById(removeBtnId);
-      if (!uploadBtn || !fileInput) return;
+      if (!uploadBtn || !fileInput) {
+        console.warn(`Avatar upload: missing #${btnId} or #${inputId}`);
+        return;
+      }
+
+      // Clone and replace button to ensure no stale listeners
+      const freshBtn = uploadBtn.cloneNode(true);
+      uploadBtn.parentNode.replaceChild(freshBtn, uploadBtn);
 
       // Open file picker when button is clicked
-      uploadBtn.addEventListener('click', (e) => {
+      freshBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         fileInput.value = ''; // Reset so re-selecting same file triggers change
