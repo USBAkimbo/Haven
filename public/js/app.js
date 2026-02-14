@@ -109,8 +109,16 @@ class HavenApp {
     this._setupResizableSidebars();
 
     // CSP-safe image error handling (no inline onerror attributes)
+    // For avatar images, hide the broken img and show the letter-initial fallback
     document.getElementById('messages')?.addEventListener('error', (e) => {
-      if (e.target.tagName === 'IMG') e.target.style.display = 'none';
+      if (e.target.tagName === 'IMG') {
+        e.target.style.display = 'none';
+        // Show the letter-initial fallback div if it exists as the next sibling
+        const fallback = e.target.nextElementSibling;
+        if (fallback && fallback.classList.contains('message-avatar')) {
+          fallback.style.display = 'flex';
+        }
+      }
     }, true);
 
     this.socket.emit('get-channels');
@@ -1694,33 +1702,41 @@ class HavenApp {
       const fileInput = document.getElementById(inputId);
       const removeBtn = document.getElementById(removeBtnId);
       if (!uploadBtn || !fileInput) {
-        console.warn(`Avatar upload: missing #${btnId} or #${inputId}`);
+        console.warn(`[Avatar] Missing elements: #${btnId}=${!!uploadBtn}, #${inputId}=${!!fileInput}`);
         return;
       }
 
-      // Clone and replace button to ensure no stale listeners
-      const freshBtn = uploadBtn.cloneNode(true);
-      uploadBtn.parentNode.replaceChild(freshBtn, uploadBtn);
+      // Create a FRESH hidden file input to avoid stale-listener issues across browsers.
+      // Some environments (reverse proxies, embedded browsers) misbehave when reusing
+      // a hidden file input that was wired before the DOM was fully interactive.
+      const freshInput = document.createElement('input');
+      freshInput.type = 'file';
+      freshInput.accept = 'image/*';
+      freshInput.style.display = 'none';
+      freshInput.id = inputId;
+      fileInput.parentNode.replaceChild(freshInput, fileInput);
 
-      // Open file picker when button is clicked
-      freshBtn.addEventListener('click', (e) => {
+      // Direct click handler — no clone-and-replace needed (called once at init)
+      uploadBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        fileInput.value = ''; // Reset so re-selecting same file triggers change
-        fileInput.click();
+        freshInput.value = ''; // Reset so re-selecting same file triggers change
+        freshInput.click();
       });
 
-      fileInput.addEventListener('change', async () => {
-        const file = fileInput.files[0];
-        if (!file) return;
+      freshInput.addEventListener('change', async () => {
+        const file = freshInput.files[0];
+        if (!file) { console.warn('[Avatar] change fired but no file selected'); return; }
+        console.log(`[Avatar] File selected: ${file.name} (${file.size} bytes, ${file.type})`);
+
         if (file.size > 2 * 1024 * 1024) {
           this._showToast('Avatar too large (max 2 MB)', 'error');
-          fileInput.value = '';
+          freshInput.value = '';
           return;
         }
         if (!file.type.startsWith('image/')) {
           this._showToast('Please select an image file', 'error');
-          fileInput.value = '';
+          freshInput.value = '';
           return;
         }
 
@@ -1734,18 +1750,28 @@ class HavenApp {
             headers: { 'Authorization': `Bearer ${this.token}` },
             body: formData
           });
+          console.log(`[Avatar] Upload response: ${res.status}`);
           if (!res.ok) {
             let errMsg = `Upload failed (${res.status})`;
             try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
+            console.error(`[Avatar] Upload error: ${errMsg}`);
             return this._showToast(errMsg, 'error');
           }
           const data = await res.json();
+          console.log(`[Avatar] Upload OK: ${data.url}`);
+
+          // Update local state immediately for instant feedback
+          this.user.avatar = data.url;
+          localStorage.setItem('haven_user', JSON.stringify(this.user));
+          this._updateAvatarPreview();
+
           // Notify server via socket to update all connected clients
           this.socket.emit('set-avatar', { url: data.url });
-        } catch {
+        } catch (err) {
+          console.error('[Avatar] Upload exception:', err);
           this._showToast('Upload failed — check your connection', 'error');
         }
-        fileInput.value = '';
+        freshInput.value = '';
       });
 
       if (removeBtn) {
@@ -1753,6 +1779,8 @@ class HavenApp {
           this.socket.emit('set-avatar', { url: '' });
         });
       }
+
+      console.log(`[Avatar] Wired: #${btnId} → #${inputId}`);
     };
 
     // Wire both settings modal and rename/profile modal avatar uploads
@@ -2519,7 +2547,7 @@ class HavenApp {
     const color = this._getUserColor(msg.username);
     const initial = msg.username.charAt(0).toUpperCase();
     const avatarHtml = msg.avatar
-      ? `<img class="message-avatar message-avatar-img" src="${this._escapeHtml(msg.avatar)}" alt="${initial}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="message-avatar" style="background-color:${color};display:none">${initial}</div>`
+      ? `<img class="message-avatar message-avatar-img" src="${this._escapeHtml(msg.avatar)}" alt="${initial}"><div class="message-avatar" style="background-color:${color};display:none">${initial}</div>`
       : `<div class="message-avatar" style="background-color:${color}">${initial}</div>`;
 
     // Look up user's role from online users list

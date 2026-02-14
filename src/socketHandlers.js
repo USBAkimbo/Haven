@@ -2072,6 +2072,7 @@ function setupSocketHandlers(io, db) {
       try {
         db.prepare('UPDATE users SET avatar = ? WHERE id = ?').run(url || null, socket.user.id);
         socket.user.avatar = url || null;
+        console.log(`[Avatar] ${socket.user.username} set avatar: ${url || '(removed)'}`);
         // Refresh online users in all channels this user is in
         for (const [code, users] of channelUsers) {
           if (users.has(socket.user.id)) {

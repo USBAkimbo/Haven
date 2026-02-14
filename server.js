@@ -275,11 +275,12 @@ app.post('/api/upload-file', uploadLimiter, (req, res) => {
 app.post('/api/upload-avatar', uploadLimiter, (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   const user = token ? verifyToken(token) : null;
-  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!user) { console.log('[Avatar] Upload rejected: no valid token'); return res.status(401).json({ error: 'Unauthorized' }); }
 
   upload.single('image')(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message });
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    if (err) { console.log(`[Avatar] Multer error for ${user.username}: ${err.message}`); return res.status(400).json({ error: err.message }); }
+    if (!req.file) { console.log(`[Avatar] No file received for ${user.username}`); return res.status(400).json({ error: 'No file uploaded' }); }
+    console.log(`[Avatar] File received for ${user.username}: ${req.file.originalname} (${req.file.size} bytes, ${req.file.mimetype})`);
     if (req.file.size > 2 * 1024 * 1024) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: 'Avatar must be under 2 MB' });
@@ -302,6 +303,7 @@ app.post('/api/upload-avatar', uploadLimiter, (req, res) => {
     const avatarUrl = `/uploads/${req.file.filename}`;
     const { getDb } = require('./src/database');
     getDb().prepare('UPDATE users SET avatar = ? WHERE id = ?').run(avatarUrl, user.id);
+    console.log(`[Avatar] Saved for ${user.username}: ${avatarUrl}`);
     res.json({ url: avatarUrl });
   });
 });
