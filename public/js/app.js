@@ -539,6 +539,7 @@ class HavenApp {
     });
 
     this.socket.on('bio-updated', (data) => {
+      this.user.bio = data.bio || '';
       this._showToast('Bio updated', 'success');
     });
 
@@ -1357,7 +1358,19 @@ class HavenApp {
       input.value = this.user.displayName || this.user.username;
       input.focus();
       input.select();
-      this._updateRenameAvatarPreview();
+      // Populate bio
+      const bioInput = document.getElementById('edit-profile-bio');
+      if (bioInput) bioInput.value = this.user.bio || '';
+      this._updateAvatarPreview();
+      // Sync shape picker buttons
+      const picker = document.getElementById('avatar-shape-picker');
+      if (picker) {
+        const currentShape = this.user.avatarShape || localStorage.getItem('haven_avatar_shape') || 'circle';
+        picker.querySelectorAll('.avatar-shape-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.shape === currentShape);
+        });
+        this._pendingAvatarShape = currentShape;
+      }
     });
 
     // ── Profile popup: click on message author name or avatar ──
@@ -1947,6 +1960,13 @@ class HavenApp {
       return this._showToast('Letters, numbers, underscores, and spaces only', 'error');
     }
     this.socket.emit('rename-user', { username: newName });
+    // Save bio
+    const bioInput = document.getElementById('edit-profile-bio');
+    if (bioInput) {
+      this.socket.emit('set-bio', { bio: bioInput.value });
+    }
+    // Also commit any pending avatar changes
+    this._commitAvatarSettings();
     document.getElementById('rename-modal').style.display = 'none';
   }
 
@@ -4199,7 +4219,23 @@ class HavenApp {
     if (editBtnEl) {
       editBtnEl.addEventListener('click', () => {
         this._closeProfilePopup();
-        this._openEditProfileModal(profile);
+        // Open the Edit Profile (rename) modal which now includes avatar + display name + bio
+        document.getElementById('rename-modal').style.display = 'flex';
+        const input = document.getElementById('rename-input');
+        input.value = this.user.displayName || this.user.username;
+        input.focus();
+        input.select();
+        const bioInput = document.getElementById('edit-profile-bio');
+        if (bioInput) bioInput.value = this.user.bio || '';
+        this._updateAvatarPreview();
+        const picker = document.getElementById('avatar-shape-picker');
+        if (picker) {
+          const currentShape = this.user.avatarShape || localStorage.getItem('haven_avatar_shape') || 'circle';
+          picker.querySelectorAll('.avatar-shape-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.shape === currentShape);
+          });
+          this._pendingAvatarShape = currentShape;
+        }
       });
     }
 
@@ -4862,17 +4898,25 @@ class HavenApp {
   }
 
   _closeScreenShare() {
-    // Actually stop your screen share if sharing, otherwise just close viewer
+    // If user is actively sharing, stop that stream
     if (this.voice && this.voice.screenStream) {
       this._toggleScreenShare(); // stops sharing
     }
     const container = document.getElementById('screen-share-container');
     const grid = document.getElementById('screen-share-grid');
+    const tileCount = grid ? grid.querySelectorAll('.screen-share-tile').length : 0;
+
     container.style.display = 'none';
-    this._screenShareMinimized = false;
-    // Remove any lingering indicator
-    const ind = document.getElementById('screen-share-indicator');
-    if (ind) ind.remove();
+    container.classList.remove('stream-focus-mode');
+    this._screenShareMinimized = true;
+
+    // If there are still active streams running, show the indicator so user can reopen
+    if (tileCount > 0) {
+      this._showScreenShareIndicator(tileCount);
+    } else {
+      this._screenShareMinimized = false;
+      this._removeScreenShareIndicator();
+    }
   }
 
   // ── Screen Share Audio ──────────────────────────────
@@ -4940,6 +4984,17 @@ class HavenApp {
     if (!wasFocused) {
       tile.classList.add('stream-focused');
       container.classList.add('stream-focus-mode');
+      // Override inline max-height set by the slider so the stream can expand
+      container.style.maxHeight = 'none';
+      grid.style.maxHeight = 'none';
+      tile.querySelector('video')?.style && (tile.querySelector('video').style.maxHeight = 'none');
+    } else {
+      // Restore slider-based size
+      const saved = localStorage.getItem('haven_stream_size') || '50';
+      const vh = parseInt(saved, 10);
+      container.style.maxHeight = vh + 'vh';
+      grid.style.maxHeight = (vh - 2) + 'vh';
+      document.querySelectorAll('.screen-share-tile video').forEach(v => { v.style.maxHeight = (vh - 4) + 'vh'; });
     }
   }
 
@@ -6936,26 +6991,49 @@ class HavenApp {
   // ═══════════════════════════════════════════════════════
 
   _setupIdleDetection() {
-    const IDLE_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+    const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes of no activity
+    const HIDDEN_TIMEOUT = 2 * 60 * 1000; // 2 minutes when tab is hidden
+    let lastActivity = Date.now();
+    let idleEmitPending = false;
 
-    const resetIdle = () => {
-      // If user is 'away' and didn't manually choose it, restore to online
-      // This handles: auto-idle from this session, OR stale 'away' from a previous session
+    const goIdle = () => {
+      if (this.userStatus === 'online' && !this._manualStatusOverride) {
+        this.socket.emit('set-status', { status: 'away', statusText: this.userStatusText });
+      }
+    };
+
+    const goOnline = () => {
       if (this.userStatus === 'away' && !this._manualStatusOverride) {
         this.socket.emit('set-status', { status: 'online', statusText: this.userStatusText });
       }
-      clearTimeout(this.idleTimer);
-      this.idleTimer = setTimeout(() => {
-        // Only auto-idle users who are 'online' (don't touch dnd/invisible/manual away)
-        if (this.userStatus === 'online') {
-          this.socket.emit('set-status', { status: 'away', statusText: this.userStatusText });
-        }
-      }, IDLE_TIMEOUT);
     };
 
-    ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
+    const resetIdle = () => {
+      lastActivity = Date.now();
+      // Restore from away if needed (debounced — only emit once)
+      if (this.userStatus === 'away' && !this._manualStatusOverride && !idleEmitPending) {
+        idleEmitPending = true;
+        setTimeout(() => { idleEmitPending = false; goOnline(); }, 300);
+      }
+      clearTimeout(this.idleTimer);
+      this.idleTimer = setTimeout(goIdle, document.hidden ? HIDDEN_TIMEOUT : IDLE_TIMEOUT);
+    };
+
+    // Only fire on intentional input — NOT mousemove (micro-jitters keep resetting)
+    ['keydown', 'click', 'scroll', 'touchstart', 'mousedown'].forEach(evt => {
       document.addEventListener(evt, resetIdle, { passive: true });
     });
+
+    // Tab visibility: go idle faster when tab is hidden, come back when visible
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        clearTimeout(this.idleTimer);
+        this.idleTimer = setTimeout(goIdle, HIDDEN_TIMEOUT);
+      } else {
+        resetIdle();
+      }
+    });
+
     resetIdle();
   }
 

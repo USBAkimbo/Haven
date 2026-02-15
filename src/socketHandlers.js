@@ -2428,6 +2428,12 @@ function setupSocketHandlers(io, db) {
            ORDER BY r.level DESC`
         ).all(data.userId);
 
+        // If user is admin, prepend the Admin pseudo-role so it shows in their profile
+        const isAdmin = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(data.userId);
+        if (isAdmin && isAdmin.is_admin) {
+          roles.unshift({ id: -1, name: 'Admin', level: 100, color: '#e74c3c' });
+        }
+
         // Check online status
         let isOnline = false;
         for (const [, s] of io.of('/').sockets) {

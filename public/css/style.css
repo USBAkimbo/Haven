@@ -1277,16 +1277,16 @@ input, textarea { font-family: inherit; outline: none; border: none; }
 /* Slider classes set --track-bg / --track-h / --track-r to override
    the defaults below. Themed tracks use --track-bg for colouring.  */
 input[type="range"]:not(.rgb-slider)::-webkit-slider-runnable-track {
-  background: var(--track-bg, var(--bg-tertiary));
-  height: var(--track-h, 4px);
-  border-radius: var(--track-r, 2px);
-  border: var(--track-border, none);
+  background: var(--track-bg, rgba(255,255,255,0.25));
+  height: var(--track-h, 6px);
+  border-radius: var(--track-r, 3px);
+  border: var(--track-border, 1px solid rgba(255,255,255,0.15));
 }
 input[type="range"]:not(.rgb-slider)::-moz-range-track {
-  background: var(--track-bg, var(--bg-tertiary));
-  height: var(--track-h, 4px);
-  border-radius: var(--track-r, 2px);
-  border: var(--track-border, none);
+  background: var(--track-bg, rgba(255,255,255,0.25));
+  height: var(--track-h, 6px);
+  border-radius: var(--track-r, 3px);
+  border: var(--track-border, 1px solid rgba(255,255,255,0.15));
 }
 
 ::-webkit-scrollbar { width: 6px; }
@@ -3849,15 +3849,17 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 }
 
 .volume-slider::-webkit-slider-runnable-track {
-  background: var(--track-bg, var(--bg-tertiary));
-  height: 4px;
-  border-radius: 2px;
+  background: rgba(255,255,255,0.3);
+  height: 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.15);
 }
 
 .volume-slider::-moz-range-track {
-  background: var(--track-bg, var(--bg-tertiary));
-  height: 4px;
-  border-radius: 2px;
+  background: rgba(255,255,255,0.3);
+  height: 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.15);
 }
 
 .volume-slider::-webkit-slider-thumb {
@@ -3914,15 +3916,17 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 }
 
 .slider-sm::-webkit-slider-runnable-track {
-  background: var(--track-bg, var(--bg-tertiary));
-  height: 4px;
-  border-radius: 2px;
+  background: rgba(255,255,255,0.25);
+  height: 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.12);
 }
 
 .slider-sm::-moz-range-track {
-  background: var(--track-bg, var(--bg-tertiary));
-  height: 4px;
-  border-radius: 2px;
+  background: rgba(255,255,255,0.25);
+  height: 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.12);
 }
 
 .slider-sm::-webkit-slider-thumb {
@@ -5983,14 +5987,16 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   outline: none;
 }
 .stream-size-slider::-webkit-slider-runnable-track {
-  background: rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.3);
   height: 6px;
   border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.2);
 }
 .stream-size-slider::-moz-range-track {
-  background: rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.3);
   height: 6px;
   border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.2);
 }
 .stream-size-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -6097,26 +6103,28 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   vertical-align: middle;
 }
 .stream-vol-slider::-webkit-slider-runnable-track {
-  background: var(--track-bg, rgba(255,255,255,0.2));
-  height: 4px;
-  border-radius: 2px;
+  background: rgba(255,255,255,0.3);
+  height: 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.15);
 }
 .stream-vol-slider::-moz-range-track {
-  background: var(--track-bg, rgba(255,255,255,0.2));
-  height: 4px;
-  border-radius: 2px;
+  background: rgba(255,255,255,0.3);
+  height: 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.15);
 }
 .stream-vol-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 10px; height: 10px;
+  width: 14px; height: 14px;
   border-radius: 50%;
   background: var(--accent, #7c5cfc);
   cursor: pointer;
-  margin-top: -3px;
+  margin-top: -5px;
   box-shadow: 0 0 4px rgba(124,92,252,0.4);
 }
 .stream-vol-slider::-moz-range-thumb {
-  width: 10px; height: 10px;
+  width: 14px; height: 14px;
   border-radius: 50%;
   background: var(--accent, #7c5cfc);
   cursor: pointer;
@@ -6456,9 +6464,10 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 .music-pip-vol {
   -webkit-appearance: none;
   appearance: none;
-  height: 4px;
-  background: var(--bg-primary);
-  border-radius: 2px;
+  height: 6px;
+  background: rgba(255,255,255,0.25);
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.12);
   outline: none;
   flex: 1;
   max-width: 120px;
@@ -6470,6 +6479,15 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   background: var(--accent);
   border-radius: 50%;
   cursor: pointer;
+  margin-top: -4px;
+}
+.music-pip-vol::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
 }
 
 /* ── PiP Opacity Slider ───────────────────────────────── */

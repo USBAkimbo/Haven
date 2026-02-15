@@ -512,11 +512,22 @@
     <div class="modal">
       <h3>Edit Profile</h3>
 
-      <!-- Avatar Preview (edit in Settings) -->
+      <!-- Avatar Customizer -->
       <div class="avatar-settings" style="margin-bottom: 16px;">
-        <div class="avatar-preview-row">
-          <div class="avatar-preview-circle" id="rename-avatar-preview"></div>
-          <small class="settings-hint">Use ⚙️ Settings to customize your avatar</small>
+        <h5 class="settings-section-subtitle">Avatar</h5>
+        <div class="avatar-upload-row" style="margin-bottom: 10px;">
+          <div class="avatar-upload-preview" id="avatar-upload-preview"></div>
+          <button type="button" class="btn-sm" id="avatar-upload-btn">Upload</button>
+          <button type="button" class="btn-sm" id="avatar-remove-btn">Clear</button>
+          <input type="file" id="avatar-file-input" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none">
+        </div>
+        <h5 class="settings-section-subtitle">Shape</h5>
+        <div class="avatar-shape-picker" id="avatar-shape-picker">
+          <button type="button" class="avatar-shape-btn active" data-shape="circle" title="Circle"><div class="shape-preview shape-circle"></div></button>
+          <button type="button" class="avatar-shape-btn" data-shape="rounded" title="Rounded"><div class="shape-preview shape-rounded"></div></button>
+          <button type="button" class="avatar-shape-btn" data-shape="squircle" title="Squircle"><div class="shape-preview shape-squircle"></div></button>
+          <button type="button" class="avatar-shape-btn" data-shape="hex" title="Hexagon"><div class="shape-preview shape-hex"></div></button>
+          <button type="button" class="avatar-shape-btn" data-shape="diamond" title="Diamond"><div class="shape-preview shape-diamond"></div></button>
         </div>
       </div>
 
@@ -526,7 +537,15 @@
         <label>Display Name</label>
         <input type="text" id="rename-input" placeholder="New display name..." maxlength="20">
       </div>
+
+      <!-- Bio -->
+      <div class="form-group" style="margin-top:8px">
+        <label>Bio <span class="muted-text">(max 190 chars)</span></label>
+        <textarea id="edit-profile-bio" class="edit-profile-textarea" maxlength="190" placeholder="Tell people about yourself…" rows="2"></textarea>
+      </div>
+
       <div class="modal-actions">
+        <span id="avatar-save-status" class="settings-hint" style="flex:1"></span>
         <button class="btn-sm" id="cancel-rename-btn">Cancel</button>
         <button class="btn-sm btn-accent" id="save-rename-btn">Save</button>
       </div>
@@ -559,37 +578,6 @@
       <div class="settings-header">
         <h3>⚙️ Settings</h3>
         <button class="settings-close-btn" id="close-settings-btn">&times;</button>
-      </div>
-
-      <!-- Avatar / PFP Customizer Section -->
-      <div class="settings-section">
-        <h5 class="settings-section-title">🖼️ Customize Avatar</h5>
-        <div class="avatar-settings">
-          <!-- Shape Picker -->
-          <h5 class="settings-section-subtitle">Avatar Shape</h5>
-          <div class="avatar-shape-picker" id="avatar-shape-picker">
-            <button type="button" class="avatar-shape-btn active" data-shape="circle" title="Circle"><div class="shape-preview shape-circle"></div></button>
-            <button type="button" class="avatar-shape-btn" data-shape="rounded" title="Rounded"><div class="shape-preview shape-rounded"></div></button>
-            <button type="button" class="avatar-shape-btn" data-shape="squircle" title="Squircle"><div class="shape-preview shape-squircle"></div></button>
-            <button type="button" class="avatar-shape-btn" data-shape="hex" title="Hexagon"><div class="shape-preview shape-hex"></div></button>
-            <button type="button" class="avatar-shape-btn" data-shape="diamond" title="Diamond"><div class="shape-preview shape-diamond"></div></button>
-          </div>
-
-          <!-- Image Upload -->
-          <h5 class="settings-section-subtitle" style="margin-top:10px">Avatar Image</h5>
-          <div class="avatar-upload-row">
-            <div class="avatar-upload-preview" id="avatar-upload-preview"></div>
-            <button type="button" class="btn-sm" id="avatar-upload-btn">Upload</button>
-            <button type="button" class="btn-sm" id="avatar-remove-btn">Clear</button>
-            <input type="file" id="avatar-file-input" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none">
-          </div>
-
-          <!-- Save / Status -->
-          <div style="margin-top:12px; display:flex; align-items:center; gap:10px;">
-            <button type="button" class="btn-sm btn-accent" id="avatar-save-btn">💾 Save Avatar Settings</button>
-            <span id="avatar-save-status" class="settings-hint"></span>
-          </div>
-        </div>
       </div>
 
       <!-- Layout Density Section -->
