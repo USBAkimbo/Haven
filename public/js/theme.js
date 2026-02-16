@@ -230,7 +230,7 @@ function initSacredIntensityEditor() {
 // STACKABLE EFFECT LAYER SYSTEM
 // ═══════════════════════════════════════════════════════════
 const THEME_DEFAULT_FX = {
-  crt: ['crt'], matrix: ['matrix','matrixbars'], fallout: ['fallout'], ffx: ['ffx'],
+  matrix: ['matrix','matrixbars'], fallout: ['fallout'], ffx: ['ffx'],
   ice: ['ice'], nord: ['nord'], darksouls: ['darksouls'], eldenring: ['eldenring'],
   bloodborne: ['bloodborne'], cyberpunk: ['cyberpunk'], lotr: ['lotr'], abyss: ['abyss'],
   scripture: ['scripture'], chapel: ['chapel'], gospel: ['gospel']

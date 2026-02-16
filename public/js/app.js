@@ -452,6 +452,9 @@ class HavenApp {
     this.socket.on('music-control', (data) => {
       this._handleMusicControl(data);
     });
+    this.socket.on('music-seek', (data) => {
+      if (data && typeof data.position === 'number') this._seekMusic(data.position);
+    });
     this.socket.on('music-search-results', (data) => {
       this._showMusicSearchResults(data);
     });
@@ -1155,6 +1158,13 @@ class HavenApp {
       this._musicSeeking = false;
       const pct = parseFloat(e.target.value);
       this._seekMusic(pct);
+      // Broadcast seek to others in voice
+      if (this.voice && this.voice.inVoice) {
+        this.socket.emit('music-seek', {
+          code: this.voice.currentChannel,
+          position: pct
+        });
+      }
     });
     document.getElementById('music-link-input').addEventListener('input', (e) => {
       this._previewMusicLink(e.target.value.trim());
@@ -1193,10 +1203,15 @@ class HavenApp {
       const applySize = () => {
         if (_resizeRAF) cancelAnimationFrame(_resizeRAF);
         _resizeRAF = requestAnimationFrame(() => {
-          const vh = parseInt(streamSizeSlider.value, 10);
+          // Auto-exit fullscreen (focus mode) when user adjusts the size slider
           const container = document.getElementById('screen-share-container');
-          container.style.maxHeight = vh + 'vh';
           const grid = document.getElementById('screen-share-grid');
+          if (container.classList.contains('stream-focus-mode')) {
+            grid.querySelectorAll('.screen-share-tile').forEach(t => t.classList.remove('stream-focused'));
+            container.classList.remove('stream-focus-mode');
+          }
+          const vh = parseInt(streamSizeSlider.value, 10);
+          container.style.maxHeight = vh + 'vh';
           grid.style.maxHeight = (vh - 2) + 'vh';
           document.querySelectorAll('.screen-share-tile video').forEach(v => { v.style.maxHeight = (vh - 4) + 'vh'; });
           localStorage.setItem('haven_stream_size', vh);
@@ -1323,6 +1338,12 @@ class HavenApp {
     // Registry of available games — add new games here
     this._gamesRegistry = [
       { id: 'flappy', name: 'Shippy Container', icon: '🚢', path: '/games/flappy.html', description: 'Dodge containers, chase high scores!' },
+      { id: 'flight', name: 'Flight', icon: '✈️', path: '/games/flash.html?swf=/games/roms/flight-759879f9.swf&title=Flight', description: 'Throw a paper plane as far as you can!', type: 'flash' },
+      { id: 'learn-to-fly-3', name: 'Learn to Fly 3', icon: '🐧', path: '/games/flash.html?swf=/games/roms/learn-to-fly-3.swf&title=Learn%20to%20Fly%203', description: 'Help a penguin learn to fly!', type: 'flash' },
+      { id: 'bubble-tanks-3', name: 'Bubble Tanks 3', icon: '🫧', path: '/games/flash.html?swf=/games/roms/Bubble%20Tanks%203.swf&title=Bubble%20Tanks%203', description: 'Bubble-based arena shooter', type: 'flash' },
+      { id: 'tanks', name: 'Tanks', icon: '🪖', path: '/games/flash.html?swf=/games/roms/tanks.swf&title=Tanks', description: 'Classic Armor Games tank combat', type: 'flash' },
+      { id: 'super-smash-flash-2', name: 'Super Smash Flash 2', icon: '⚔️', path: '/games/flash.html?swf=/games/roms/SuperSmash.swf&title=Super%20Smash%20Flash%202', description: 'Fan-made Smash Bros platformer fighter', type: 'flash' },
+      { id: 'io-games', name: '.io Games', icon: '🌐', path: '/games/io-games.html', description: 'Browse popular .io multiplayer games', type: 'browser' },
     ];
 
     // Generic postMessage bridge for any game (scores + leaderboard)
@@ -1364,6 +1385,23 @@ class HavenApp {
     // Game iframe controls
     document.getElementById('game-iframe-close')?.addEventListener('click', () => this._closeGameIframe());
     document.getElementById('game-iframe-popout')?.addEventListener('click', () => this._popoutGame());
+
+    // Game volume slider — forward volume changes into the game iframe
+    const gameVolSlider = document.getElementById('game-volume-slider');
+    const gameVolPct = document.getElementById('game-volume-pct');
+    if (gameVolSlider) {
+      gameVolSlider.addEventListener('input', () => {
+        const val = parseInt(gameVolSlider.value);
+        if (gameVolPct) gameVolPct.textContent = val + '%';
+        // Post volume message into the game iframe
+        try {
+          const iframe = document.getElementById('game-iframe');
+          if (iframe?.contentWindow) {
+            iframe.contentWindow.postMessage({ type: 'set-volume', volume: val / 100 }, window.location.origin);
+          }
+        } catch {}
+      });
+    }
 
     // Image click + spoiler click delegation (CSP-safe — no inline handlers)
     document.getElementById('messages').addEventListener('click', (e) => {
@@ -4288,7 +4326,7 @@ class HavenApp {
       if (msg.pinned) el.dataset.pinned = '1';
       el.innerHTML = `
         <span class="compact-time">${new Date(msg.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
-        <div class="message-content">${pinnedTag}${e2eTag}${this._formatContent(msg.content)}${editedHtml}</div>
+        <div class="message-content">${pinnedTag}${this._formatContent(msg.content)}${editedHtml}</div>
         ${toolbarHtml}
         ${reactionsHtml}
       `;
@@ -4329,6 +4367,7 @@ class HavenApp {
             ${msgRoleBadge}
             <span class="message-time">${this._formatTime(msg.created_at)}</span>
             ${pinnedTag}
+            <span class="message-header-spacer"></span>
             ${e2eTag}
           </div>
           <div class="message-content">${this._formatContent(msg.content)}${editedHtml}</div>
@@ -4359,6 +4398,9 @@ class HavenApp {
     const reactionsEl = compactEl.querySelector('.reactions');
     const reactionsHtml = reactionsEl ? reactionsEl.outerHTML : '';
     const pinnedTag = isPinned ? '<span class="pinned-tag" title="Pinned message">📌</span>' : '';
+    // Check if this DM channel has E2E
+    const ch = this.channels.find(c => c.code === this.currentChannel);
+    const e2eTag = (ch && ch.is_dm) ? '<span class="e2e-tag" title="End-to-end encrypted">🔒</span>' : '';
 
     const color = this._getUserColor(username);
     const initial = username.charAt(0).toUpperCase();
@@ -4389,6 +4431,8 @@ class HavenApp {
             ${msgRoleBadge}
             <span class="message-time">${this._formatTime(time)}</span>
             ${pinnedTag}
+            <span class="message-header-spacer"></span>
+            ${e2eTag}
           </div>
           <div class="message-content">${contentHtml}</div>
           ${reactionsHtml}
@@ -8037,12 +8081,16 @@ class HavenApp {
 
     const goIdle = () => {
       if (this.userStatus === 'online' && !this._manualStatusOverride) {
+        this.userStatus = 'away';  // optimistic local update (server confirms via status-updated)
+        this._updateStatusPickerUI();
         this.socket.emit('set-status', { status: 'away', statusText: this.userStatusText });
       }
     };
 
     const goOnline = () => {
       if (this.userStatus === 'away' && !this._manualStatusOverride) {
+        this.userStatus = 'online';  // optimistic local update
+        this._updateStatusPickerUI();
         this.socket.emit('set-status', { status: 'online', statusText: this.userStatusText });
       }
     };

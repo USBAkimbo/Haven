@@ -63,15 +63,15 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "https://www.youtube.com", "https://w.soundcloud.com"],
+      scriptSrc: ["'self'", "https://www.youtube.com", "https://w.soundcloud.com", "https://unpkg.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],  // inline styles needed for themes
       imgSrc: ["'self'", "data:", "blob:", "https:"],  // https: for link preview OG images + GIPHY
       connectSrc: ["'self'", "ws:", "wss:", "https:"],  // Socket.IO + cross-origin health checks
       mediaSrc: ["'self'", "blob:", "data:"],  // WebRTC audio + notification sounds
       fontSrc: ["'self'"],
-      workerSrc: ["'self'"],               // service worker for push notifications
+      workerSrc: ["'self'", "blob:"],          // service worker + Ruffle WebAssembly workers
       objectSrc: ["'none'"],
-      frameSrc: ["https://open.spotify.com", "https://www.youtube.com", "https://www.youtube-nocookie.com", "https://w.soundcloud.com"],  // Listen Together embeds
+      frameSrc: ["'self'", "https://open.spotify.com", "https://www.youtube.com", "https://www.youtube-nocookie.com", "https://w.soundcloud.com"],  // Listen Together embeds + game iframes
       baseUri: ["'self'"],
       formAction: ["'self'"],
       frameAncestors: ["'self'"],               // allow mobile app iframe, block third-party clickjacking

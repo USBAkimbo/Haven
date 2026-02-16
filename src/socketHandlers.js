@@ -224,6 +224,7 @@ function setupSocketHandlers(io, db) {
       FROM roles r
       JOIN user_roles ur ON r.id = ur.role_id
       WHERE ur.user_id = ?
+      GROUP BY r.id, COALESCE(ur.channel_id, -1)
       ORDER BY r.level DESC
     `).all(userId);
   }
@@ -725,19 +726,23 @@ function setupSocketHandlers(io, db) {
         db.prepare(
           'INSERT INTO channel_members (channel_id, user_id) VALUES (?, ?)'
         ).run(channel.id, socket.user.id);
+      }
 
-        // Auto-add to all non-private sub-channels of this channel
-        if (!channel.parent_channel_id) {
-          const subs = db.prepare(
-            'SELECT id, code FROM channels WHERE parent_channel_id = ? AND is_private = 0'
-          ).all(channel.id);
-          const insertSub = db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id) VALUES (?, ?)');
-          subs.forEach(sub => {
-            insertSub.run(sub.id, socket.user.id);
-            socket.join(`channel:${sub.code}`);
-          });
-        }
+      // Auto-add to all non-private sub-channels of this channel (both new & existing members)
+      // This ensures users joining via code always get grandfathered into subs,
+      // even if the subs were created after the user originally joined the parent.
+      if (!channel.parent_channel_id) {
+        const subs = db.prepare(
+          'SELECT id, code FROM channels WHERE parent_channel_id = ? AND is_private = 0'
+        ).all(channel.id);
+        const insertSub = db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id) VALUES (?, ?)');
+        subs.forEach(sub => {
+          insertSub.run(sub.id, socket.user.id);
+          socket.join(`channel:${sub.code}`);
+        });
+      }
 
+      if (!membership) {
         // Join-based code rotation: increment counter and rotate if threshold reached
         if (channel.code_mode === 'dynamic' && channel.code_rotation_type === 'joins') {
           const newCount = (channel.code_rotation_counter || 0) + 1;
@@ -1383,6 +1388,25 @@ function setupSocketHandlers(io, db) {
         if (uid === socket.user.id) continue; // don't echo back to sender
         io.to(user.socketId).emit('music-control', {
           action,
+          userId: socket.user.id,
+          username: socket.user.displayName,
+          channelCode: data.code
+        });
+      }
+    });
+
+    // Music seek sync — broadcast seek position to voice room
+    socket.on('music-seek', (data) => {
+      if (!data || typeof data !== 'object') return;
+      if (!isString(data.code, 8, 8)) return;
+      const position = parseFloat(data.position);
+      if (isNaN(position) || position < 0 || position > 100) return;
+      const voiceRoom = voiceUsers.get(data.code);
+      if (!voiceRoom || !voiceRoom.has(socket.user.id)) return;
+      for (const [uid, user] of voiceRoom) {
+        if (uid === socket.user.id) continue;
+        io.to(user.socketId).emit('music-seek', {
+          position,
           userId: socket.user.id,
           username: socket.user.displayName,
           channelCode: data.code
@@ -2571,12 +2595,13 @@ function setupSocketHandlers(io, db) {
         ).get(data.userId);
         if (!row) return;
 
-        // Get user's roles
+        // Get user's roles (deduplicated — SQLite UNIQUE doesn't prevent NULL channel_id dups)
         const roles = db.prepare(
-          `SELECT r.id, r.name, r.level, r.color
+          `SELECT DISTINCT r.id, r.name, r.level, r.color
            FROM roles r
            JOIN user_roles ur ON r.id = ur.role_id
            WHERE ur.user_id = ?
+           GROUP BY r.id
            ORDER BY r.level DESC`
         ).all(data.userId);
 
@@ -3367,7 +3392,14 @@ function setupSocketHandlers(io, db) {
       const channelId = isInt(data.channelId) ? data.channelId : null;
 
       try {
-        db.prepare('INSERT OR REPLACE INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, ?, ?)').run(userId, roleId, channelId, socket.user.id);
+        // Explicitly delete existing assignment to prevent duplicates
+        // (SQLite UNIQUE constraints don't work reliably with NULL channel_id)
+        if (channelId) {
+          db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ? AND channel_id = ?').run(userId, roleId, channelId);
+        } else {
+          db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ? AND channel_id IS NULL').run(userId, roleId);
+        }
+        db.prepare('INSERT INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, ?, ?)').run(userId, roleId, channelId, socket.user.id);
 
         // Notify the target user if online
         for (const [, s] of io.sockets.sockets) {
@@ -3460,8 +3492,14 @@ function setupSocketHandlers(io, db) {
 
       const channelId = isInt(data.channelId) ? data.channelId : null;
       try {
+        // Explicitly delete existing assignment to prevent duplicates
+        if (channelId) {
+          db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ? AND channel_id = ?').run(userId, roleId, channelId);
+        } else {
+          db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ? AND channel_id IS NULL').run(userId, roleId);
+        }
         db.prepare(
-          'INSERT OR REPLACE INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, ?, ?)'
+          'INSERT INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, ?, ?)'
         ).run(userId, roleId, channelId, socket.user.id);
 
         // Notify target user if online
@@ -3536,7 +3574,9 @@ function setupSocketHandlers(io, db) {
           const insertPerm = db.prepare('INSERT OR IGNORE INTO role_permissions (role_id, permission, allowed) VALUES (?, ?, 1)');
           allPerms.forEach(p => insertPerm.run(formerAdminRole.id, p));
         }
-        db.prepare('INSERT OR REPLACE INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, NULL, ?)').run(
+        // Explicitly remove then insert to avoid NULL-unique duplication
+        db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ? AND channel_id IS NULL').run(socket.user.id, formerAdminRole.id);
+        db.prepare('INSERT INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, NULL, ?)').run(
           socket.user.id, formerAdminRole.id, socket.user.id
         );
 

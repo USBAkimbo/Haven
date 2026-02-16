@@ -11,30 +11,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Haven uses [Sema
 
 ---
 
-## [1.9.0] — 2026-02-17
+## [1.8.0] — 2026-02-16
 
 ### Added
-- **`/gif` slash command** — type `/gif <query>` to search GIPHY inline and send a GIF directly from the message bar. Results appear in a floating picker grid above the input; click any GIF to send it.
-- **Music player seek bar** — YouTube and SoundCloud players now show a draggable seek slider with current/total time display. Spotify hides the seek bar (no embeddable API).
-- **Configurable max upload size** — admins can set the per-file upload limit (1–500 MB) from Admin Settings. Default remains 25 MB. Enforced server-side per-request.
-
-### Changed
-- **Win95 theme polish** — sliders now use rectangular gray 10×20 px thumbs with classic outset borders and sunken tracks. Text turns white on navy-background hover/active states (channels, dropdowns, autocomplete). Checkboxes use period-correct `appearance: auto` with navy accent.
-- **SQLite performance pragmas** — added `synchronous = NORMAL`, `cache_size = -64000` (64 MB), `busy_timeout = 5000`, `temp_store = MEMORY` for significantly faster writes and reduced lock contention.
-
-### Fixed
-- **YouTube embeds "Video unavailable"** — switched from `youtube-nocookie.com` to `youtube.com/embed/` with explicit `origin=` parameter and removed `referrerpolicy="no-referrer"`, which was blocking IFrame API communication.
-- **Push notification "Registration failed"** — improved error messages with actionable guidance: use Cloudflare Tunnel, access via localhost, or install a real SSL certificate. Added self-signed certificate detection heuristic.
-
----
-
-## [1.8.0] — 2026-02-17
-
-### Added
-- **End-to-end encrypted DMs** — DM messages are now encrypted client-side using ECDH P-256 + AES-256-GCM. Private keys never leave the browser (stored with `extractable: false` in IndexedDB). Not even the server host can read DM content. Encrypted messages display a lock icon (🔒). Editing a DM re-encrypts the content. Falls back to unencrypted if either party hasn't generated keys yet.
+- **End-to-end encrypted DMs** — DM messages are now encrypted client-side using ECDH P-256 + AES-256-GCM. Private keys never leave the browser (stored with `extractable: false` in IndexedDB). Not even the server host can read DM content. Encrypted messages display a lock icon (🔒) on root messages. Editing a DM re-encrypts the content. Falls back to unencrypted if either party hasn't generated keys yet.
 - **Server-wide invite code** — admins can generate a single code that grants access to every channel and sub-channel in the server at once. Generate, copy, and clear from Admin Settings.
 - **Channel organize modal** — parent channels can now be reordered, categorized, and sorted just like sub-channels. New "Organize" button in the Channels sidebar header (admin-only).
 - **Cloudflare Tunnel documentation** — comprehensive setup guide in GUIDE.md covering installation, configuration, and troubleshooting.
+- **`/gif` slash command** — type `/gif <query>` to search GIPHY inline and send a GIF directly from the message bar. Results appear in a floating picker grid above the input; click any GIF to send it.
+- **Music player seek bar** — YouTube and SoundCloud players now show a draggable seek slider with current/total time display. Spotify hides the seek bar (no embeddable API).
+- **Configurable max upload size** — admins can set the per-file upload limit (1–500 MB) from Admin Settings. Default remains 25 MB. Enforced server-side per-request.
+- **Flash games via Ruffle** — 5 classic Flash games (Flight, Learn to Fly 3, Bubble Tanks 3, Tanks, Super Smash Flash 2) playable in-browser via the Ruffle Flash emulator.
+- **.io Games browser** — browse and play popular .io multiplayer games from the Activities panel.
+
+### Changed
+- **Win95 theme polish** — scrollbars now display proper beveled 3D rectangles with outset/inset borders. Channel header uses the classic blue gradient. Sliders use rectangular gray thumbs with outset borders and sunken tracks. Text turns white on navy-background hover/active states.
+- **CRT theme / effect separation** — selecting the CRT theme now only applies the amber color scheme and VT323 font. The CRT scanline + vignette effect is a separate opt-in from the Effects panel, no longer auto-applied.
+- **E2E lock icon consistency** — lock badge now appears once on root messages only (right-aligned in the header), not on every compact/grouped message.
+- **SQLite performance pragmas** — added `synchronous = NORMAL`, `cache_size = -64000` (64 MB), `busy_timeout = 5000`, `temp_store = MEMORY` for significantly faster writes and reduced lock contention.
+
+### Fixed
+- **User status stuck on idle** — fixed race condition where the idle timer's server emit was async but the local status wasn't updated immediately, causing activity events to not restore "online" status.
+- **YouTube embeds "Video unavailable"** — switched from `youtube-nocookie.com` to `youtube.com/embed/` with explicit `origin=` parameter and removed `referrerpolicy="no-referrer"`, which was blocking IFrame API communication.
+- **Push notification "Registration failed"** — improved error messages with actionable guidance: use Cloudflare Tunnel, access via localhost, or install a real SSL certificate. Added self-signed certificate detection heuristic.
+- **Sub-channel membership grandfathering** — joining a parent channel now auto-adds members to existing sub-channels.
+- **Duplicate channel roles** — fixed de-duplication in role assignment and profile queries.
+- **Cloudflare tunnel URL timeout** — increased detection timeout and tightened regex to exclude false positives.
+- **Game iframe CSP** — added `'self'` to `frame-src` directive; extracted inline scripts to external JS files to comply with CSP.
 
 ---
 

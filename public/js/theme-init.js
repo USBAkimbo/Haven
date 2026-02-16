@@ -11,7 +11,7 @@
   var fxList = [];
   if (Array.isArray(fxMode)) { fxList = fxMode; }
   else if (fxMode === 'auto' && t) {
-    var defaults = {crt:1,matrix:1,fallout:1,ffx:1,ice:1,nord:1,darksouls:1,bloodborne:1,cyberpunk:1,lotr:1,abyss:1,scripture:1,chapel:1,gospel:1};
+    var defaults = {matrix:1,fallout:1,ffx:1,ice:1,nord:1,darksouls:1,bloodborne:1,cyberpunk:1,lotr:1,abyss:1,scripture:1,chapel:1,gospel:1};
     if (defaults[t]) fxList = [t];
   }
   if (fxList.indexOf('crt') >= 0) document.documentElement.classList.add('fx-crt');

@@ -388,6 +388,15 @@ function initDatabase() {
     `).run(userRole.id);
   }
 
+  // ── Cleanup: remove duplicate user_roles (NULL channel_id duplicates) ──
+  // SQLite UNIQUE constraints don't prevent duplicate NULLs, so clean up on startup
+  db.exec(`
+    DELETE FROM user_roles WHERE id NOT IN (
+      SELECT MIN(id) FROM user_roles
+      GROUP BY user_id, role_id, COALESCE(channel_id, -1)
+    )
+  `);
+
   // ── Migration: push notification subscriptions ──────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (

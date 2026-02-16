@@ -1212,8 +1212,8 @@
 [data-theme="win95"] .sidebar-bottom-bar { background: #bfbfbf; border-top: 3px outset #fff; }
 [data-theme="win95"] .sidebar-bottom-btn { color: #000; background: #bfbfbf; border: 3px outset #fff; border-radius: 0; margin: 2px; }
 [data-theme="win95"] .sidebar-bottom-btn:hover { background: #dfdfdf; }
-[data-theme="win95"] .channel-header { background: #bfbfbf; border-bottom: 3px outset #fff; color: #000; }
-[data-theme="win95"] .channel-header * { color: #000; }
+[data-theme="win95"] .channel-header { background: linear-gradient(90deg, #000080, #1084d0); border-bottom: 3px outset #fff; color: #fff; }
+[data-theme="win95"] .channel-header * { color: #fff; }
 [data-theme="win95"] .channel-code-tag { background: #fff; color: #000; border: 1px inset #808080; border-radius: 0; }
 [data-theme="win95"] .btn-voice { background: #bfbfbf; color: #000; border: 3px outset #fff; border-radius: 0; }
 [data-theme="win95"] .btn-voice:hover { background: #dfdfdf; }
@@ -1233,42 +1233,156 @@
 [data-theme="win95"] .user-item-avatar { border-radius: 0; }
 [data-theme="win95"] .message-avatar, [data-theme="win95"] .message-avatar-img { border-radius: 0; border: 3px outset #fff; }
 [data-theme="win95"] ::selection { background: #000080; color: #fff; }
-[data-theme="win95"] ::-webkit-scrollbar { width: 16px; height: 16px; }
-[data-theme="win95"] ::-webkit-scrollbar-thumb { background: #bfbfbf; border: 3px outset #fff; border-radius: 0; min-height: 24px; }
-[data-theme="win95"] ::-webkit-scrollbar-track { background: repeating-conic-gradient(#bfbfbf 0% 25%, #fff 0% 50%) 50%/2px 2px; border: none; }
-[data-theme="win95"] ::-webkit-scrollbar-button { background: #bfbfbf; border: 2px outset #fff; display: block; height: 16px; width: 16px; }
-[data-theme="win95"] ::-webkit-scrollbar-button:hover { background: #d4d0c8; }
-[data-theme="win95"] ::-webkit-scrollbar-corner { background: #bfbfbf; }
-[data-theme="win95"] * { scrollbar-width: auto; scrollbar-color: #bfbfbf #d4d0c8; }
+/* Win95 scrollbars: use scrollbar-color: auto so Chrome falls through to the
+   ::-webkit-scrollbar pseudo-element pipeline (which supports gradients / border-radius).
+   Setting explicit scrollbar-color triggers Chrome's flat-colour renderer that ignores
+   webkit pseudo-element styling and always draws rounded thumbs. */
+[data-theme="win95"] * { scrollbar-width: auto !important; scrollbar-color: auto !important; }
+[data-theme="win95"] ::-webkit-scrollbar { width: 18px !important; height: 18px !important; }
+[data-theme="win95"] ::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(to right,  #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to bottom, #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to left,   #404040 0, #404040 2px, transparent 2px),
+    linear-gradient(to top,    #404040 0, #404040 2px, transparent 2px),
+    linear-gradient(to right,  #dfdfdf 2px, #dfdfdf 3px, transparent 3px),
+    linear-gradient(to bottom, #dfdfdf 2px, #dfdfdf 3px, transparent 3px),
+    linear-gradient(to left,   #808080 2px, #808080 3px, transparent 3px),
+    linear-gradient(to top,    #808080 2px, #808080 3px, transparent 3px),
+    #bfbfbf !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  min-height: 32px;
+  min-width: 32px;
+}
+[data-theme="win95"] ::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(to right,  #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to bottom, #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to left,   #404040 0, #404040 2px, transparent 2px),
+    linear-gradient(to top,    #404040 0, #404040 2px, transparent 2px),
+    #d4d0c8 !important;
+}
+[data-theme="win95"] ::-webkit-scrollbar-thumb:active {
+  background:
+    linear-gradient(to right,  #404040 0, #404040 2px, transparent 2px),
+    linear-gradient(to bottom, #404040 0, #404040 2px, transparent 2px),
+    linear-gradient(to left,   #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to top,    #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to right,  #808080 2px, #808080 3px, transparent 3px),
+    linear-gradient(to bottom, #808080 2px, #808080 3px, transparent 3px),
+    linear-gradient(to left,   #dfdfdf 2px, #dfdfdf 3px, transparent 3px),
+    linear-gradient(to top,    #dfdfdf 2px, #dfdfdf 3px, transparent 3px),
+    #bfbfbf !important;
+}
+[data-theme="win95"] ::-webkit-scrollbar-track {
+  background: repeating-conic-gradient(#bfbfbf 0% 25%, #fff 0% 50%) 50%/2px 2px !important;
+  border: none !important;
+}
+[data-theme="win95"] ::-webkit-scrollbar-button {
+  background:
+    linear-gradient(to right,  #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to bottom, #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to left,   #404040 0, #404040 2px, transparent 2px),
+    linear-gradient(to top,    #404040 0, #404040 2px, transparent 2px),
+    #bfbfbf !important;
+  border: none !important;
+  box-shadow: none !important;
+  display: block;
+  height: 18px !important;
+  width: 18px !important;
+  border-radius: 0 !important;
+}
+[data-theme="win95"] ::-webkit-scrollbar-button:hover {
+  background:
+    linear-gradient(to right,  #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to bottom, #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to left,   #404040 0, #404040 2px, transparent 2px),
+    linear-gradient(to top,    #404040 0, #404040 2px, transparent 2px),
+    #d4d0c8 !important;
+}
+[data-theme="win95"] ::-webkit-scrollbar-button:active {
+  background:
+    linear-gradient(to right,  #404040 0, #404040 2px, transparent 2px),
+    linear-gradient(to bottom, #404040 0, #404040 2px, transparent 2px),
+    linear-gradient(to left,   #ffffff 0, #ffffff 2px, transparent 2px),
+    linear-gradient(to top,    #ffffff 0, #ffffff 2px, transparent 2px),
+    #bfbfbf !important;
+}
+[data-theme="win95"] ::-webkit-scrollbar-corner { background: #bfbfbf !important; }
 [data-theme="win95"] .server-bar { background: #bfbfbf; border-right: 3px outset #fff; }
 [data-theme="win95"] .server-bar .server-icon { border-radius: 0; }
 [data-theme="win95"] .status-bar { background: #bfbfbf; border-top: 3px outset #fff; }
 [data-theme="win95"] .status-bar .status-item { border: 1px inset #808080; border-radius: 0; }
 [data-theme="win95"] * { border-radius: 0 !important; }
 
-/* Win95 sliders — rectangular gray boxes, period-correct look */
+/* Win95 sliders — rectangular gray boxes with proper 3D bevel */
 [data-theme="win95"] input[type="range"] {
   -webkit-appearance: none; appearance: none;
-  height: 20px; background: transparent;
+  height: 22px; background: transparent;
 }
 [data-theme="win95"] input[type="range"]::-webkit-slider-runnable-track {
   background: #bfbfbf !important; height: 4px !important;
-  border: 2px inset #808080 !important; border-radius: 0 !important;
+  border-top: 2px solid #404040 !important;
+  border-left: 2px solid #404040 !important;
+  border-right: 2px solid #ffffff !important;
+  border-bottom: 2px solid #ffffff !important;
+  border-radius: 0 !important;
 }
 [data-theme="win95"] input[type="range"]::-moz-range-track {
   background: #bfbfbf !important; height: 4px !important;
-  border: 2px inset #808080 !important; border-radius: 0 !important;
+  border-top: 2px solid #404040 !important;
+  border-left: 2px solid #404040 !important;
+  border-right: 2px solid #ffffff !important;
+  border-bottom: 2px solid #ffffff !important;
+  border-radius: 0 !important;
 }
 [data-theme="win95"] input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 10px; height: 20px; margin-top: -9px;
-  background: #bfbfbf; border: 3px outset #fff;
+  width: 12px; height: 22px; margin-top: -10px;
+  background: #bfbfbf;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-right: 2px solid #404040;
+  border-bottom: 2px solid #404040;
+  box-shadow: inset 1px 1px 0 #dfdfdf, inset -1px -1px 0 #808080;
   border-radius: 0 !important; cursor: pointer;
 }
+[data-theme="win95"] input[type="range"]::-webkit-slider-thumb:active {
+  border-top: 2px solid #404040;
+  border-left: 2px solid #404040;
+  border-right: 2px solid #ffffff;
+  border-bottom: 2px solid #ffffff;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #dfdfdf;
+}
 [data-theme="win95"] input[type="range"]::-moz-range-thumb {
-  width: 10px; height: 20px;
-  background: #bfbfbf; border: 3px outset #fff;
+  width: 12px; height: 22px;
+  background: #bfbfbf;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-right: 2px solid #404040;
+  border-bottom: 2px solid #404040;
+  box-shadow: inset 1px 1px 0 #dfdfdf, inset -1px -1px 0 #808080;
   border-radius: 0 !important; cursor: pointer;
+}
+[data-theme="win95"] input[type="range"]::-moz-range-thumb:active {
+  border-top: 2px solid #404040;
+  border-left: 2px solid #404040;
+  border-right: 2px solid #ffffff;
+  border-bottom: 2px solid #ffffff;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #dfdfdf;
+}
+/* Vertical range sliders (orient=vertical, writing-mode) */
+[data-theme="win95"] input[type="range"][orient="vertical"],
+[data-theme="win95"] input[type="range"].vertical {
+  writing-mode: bt-lr;
+  -webkit-appearance: slider-vertical;
+  width: 22px; height: auto;
+}
+[data-theme="win95"] input[type="range"][orient="vertical"]::-webkit-slider-thumb,
+[data-theme="win95"] input[type="range"].vertical::-webkit-slider-thumb {
+  width: 22px; height: 12px; margin-top: 0; margin-left: -10px;
 }
 
 /* Win95 text color — white text on navy backgrounds (hover/active/selected states) */
@@ -4912,10 +5026,15 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 
 .e2e-tag {
   font-size: 10px;
-  margin-left: 4px;
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: default;
   user-select: none;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.message-header-spacer {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 

@@ -1126,11 +1126,15 @@
     <div class="game-iframe-header">
       <span class="game-iframe-title" id="game-iframe-title">Game</span>
       <div class="game-iframe-actions">
+        <label style="display:flex;align-items:center;gap:6px;color:var(--text-secondary);font-size:12px;margin-right:8px;" title="Game Volume">
+          🔊 <input type="range" id="game-volume-slider" min="0" max="100" value="80" style="width:80px;accent-color:var(--accent);">
+          <span id="game-volume-pct" style="min-width:28px;font-size:11px;">80%</span>
+        </label>
         <button class="btn-sm" id="game-iframe-popout" title="Open in new window">↗️ Pop Out</button>
         <button class="btn-sm btn-danger" id="game-iframe-close" title="Close game">&times; Close</button>
       </div>
     </div>
-    <iframe id="game-iframe" class="game-iframe" sandbox="allow-scripts allow-same-origin allow-popups" allowfullscreen></iframe>
+    <iframe id="game-iframe" class="game-iframe" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" allowfullscreen></iframe>
   </div>
 
   <div class="modal-overlay" id="push-error-modal" style="display:none">
