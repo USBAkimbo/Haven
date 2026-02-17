@@ -59,7 +59,24 @@ pause
 exit /b 1
 
 :NODE_OK
+for /f "tokens=1 delims=v." %%v in ('node -v 2^>nul') do set "NODE_MAJOR=%%v"
 echo  [OK] Node.js found: & node -v
+
+:: Warn if Node major version is too new (native modules won't have prebuilts)
+if defined NODE_MAJOR (
+    if %NODE_MAJOR% GEQ 24 (
+        color 0E
+        echo.
+        echo  [!] WARNING: Node.js v%NODE_MAJOR% detected. Haven requires Node 18-22.
+        echo      Native modules like better-sqlite3 may not have prebuilt
+        echo      binaries yet, causing build failures.
+        echo.
+        echo      Please install Node.js 22 LTS from https://nodejs.org
+        echo.
+        pause
+        exit /b 1
+    )
+)
 
 :: Always install/update dependencies (fast when already up-to-date)
 cd /d "%~dp0"

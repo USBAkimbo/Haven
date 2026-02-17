@@ -1,8 +1,8 @@
 # Haven Node.js Installer Helper
-# Downloads and installs the latest Node.js LTS silently
+# Downloads and installs Node.js 22 LTS (native modules have prebuilt binaries)
 
 Write-Host ""
-Write-Host "  [*] Fetching latest Node.js LTS version..." -ForegroundColor Cyan
+Write-Host "  [*] Fetching latest Node.js 22 LTS version..." -ForegroundColor Cyan
 
 try {
     $index = Invoke-RestMethod 'https://nodejs.org/dist/index.json' -ErrorAction Stop
@@ -11,14 +11,21 @@ try {
     exit 1
 }
 
-$lts = $index | Where-Object { $_.lts } | Select-Object -First 1
+# Pin to Node 22.x — better-sqlite3 ships prebuilt binaries for v22 but not
+# newer majors yet, and compiling from source requires Python + C++ tools
+# that most Windows users don't have.
+$lts = $index | Where-Object { $_.lts -and $_.version -match '^v22\.' } | Select-Object -First 1
 if (-not $lts) {
-    Write-Host "  [ERROR] Could not determine latest LTS version." -ForegroundColor Red
+    # Fallback: try any LTS if 22.x is no longer listed
+    $lts = $index | Where-Object { $_.lts } | Select-Object -First 1
+}
+if (-not $lts) {
+    Write-Host "  [ERROR] Could not determine LTS version." -ForegroundColor Red
     exit 1
 }
 
 $version = $lts.version
-Write-Host "  [*] Latest LTS: $version" -ForegroundColor Cyan
+Write-Host "  [*] Installing Node.js $version (LTS)" -ForegroundColor Cyan
 
 $url = "https://nodejs.org/dist/$version/node-$version-x64.msi"
 $msiPath = "$env:TEMP\node-$version-x64.msi"

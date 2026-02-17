@@ -4,6 +4,9 @@
   "description": "Self-hosted private chat — your server, your rules",
   "license": "MIT-NC",
   "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0 <25.0.0"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
