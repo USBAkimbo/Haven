@@ -10,23 +10,68 @@
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 
-
+Haven is a self-hosted Discord alternative. Run it on your machine. Invite friends with a code. No cloud. No email signup. No tracking. Free forever.
 
 <img width="1917" height="948" alt="Screenshot 2026-02-14 102013" src="https://github.com/user-attachments/assets/0c85ca6c-f811-43db-a26b-9b66c418830e" />
 
+---
+
+## Quick Start — Docker (Recommended)
+
+```bash
+git clone https://github.com/ancsemi/Haven.git
+cd Haven
+docker compose up -d
+```
+
+Open `https://localhost:3000` → Register with username `admin` → Create a channel → Share the code with friends. Done.
+
+> Certificate warning is normal — click **Advanced → Proceed**. Haven uses a self-signed cert for encryption.
 
 ---
 
-## What Is This?
+## Quick Start — Windows (No Docker)
 
-Haven is a **private chat server** you run on your own computer. Think Discord, but:
+1. Install **[Node.js](https://nodejs.org/)** (LTS) and restart your PC
+2. Download and unzip this repository
+3. Double-click **`Start Haven.bat`**
+4. Browser opens automatically — register as `admin`
 
-- **You own everything** — messages, data, the server itself
-- **Nothing leaves your machine** — no cloud, no telemetry, no analytics
-- **No account with anyone** — no email, no phone number, no verification
-- **Free forever** — no subscriptions, no Nitro, no ads
+## Quick Start — Linux / macOS (No Docker)
 
-You launch it, your friends connect to your IP address, and you have a private group chat with voice, images, streaming, music, themes, and games. That's it.
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+Or manually: `npm install && node server.js`
+
+---
+
+## Who Is This For?
+
+- **Small friend groups** who want a private place to talk
+- **Self-hosters** who run services on their own hardware
+- **Privacy-conscious communities** done with Big Tech
+- **LAN gaming crews** who need voice + screen share without Discord
+- **Homelab enthusiasts** looking for a lightweight chat service
+
+---
+
+
+<img width="1918" height="945" alt="Screenshot 2026-02-13 174344" src="https://github.com/user-attachments/assets/a1925091-46de-4fa6-bb8d-788985c974be" />
+
+
+## Why Not Discord?
+
+| | Discord | Haven |
+|---|---------|-------|
+| **Hosting** | Their cloud | Your machine |
+| **Account** | Email + phone required | No email, no verification |
+| **Your data** | Stored by Discord Inc. | Never leaves your server |
+| **Cost** | Nitro upsells, boosts | Free forever |
+| **Telemetry** | Analytics, tracking | Zero telemetry |
+| **Source code** | Closed | Open (MIT-NC) |
 
 ---
 
@@ -54,69 +99,12 @@ You launch it, your friends connect to your IP address, and you have a private g
 | **Notifications** | 5 notification sounds, per-channel volume controls |
 | **Moderation** | Admin: kick, mute (timed), ban, delete users, delete channels, auto-cleanup. Role system with granular permissions. |
 | **Security** | Bcrypt passwords, JWT auth, HTTPS/SSL, rate limiting, CSP headers, input validation |
+| **E2E Encryption** | ECDH P-256 + AES-256-GCM encrypted DMs — private keys never leave the browser |
 | **Game** | Shippy Container — Drew's shipment got hung up. Server-wide leaderboard. |
 
-<img width="1918" height="945" alt="Screenshot 2026-02-13 174344" src="https://github.com/user-attachments/assets/a1925091-46de-4fa6-bb8d-788985c974be" />
-
----
-
-## Quick Start (Windows)
-
-### 1. Install Node.js
-
-Download and install from **[nodejs.org](https://nodejs.org/)** (LTS version). Restart your PC after installing.
-
-### 2. Download Haven
-
-Download this repository and unzip it anywhere. Desktop is fine.
-
-### 3. Launch
-
-Double-click **`Start Haven.bat`**
-
-A terminal window opens. When you see `HAVEN is running`, it's ready.
-
-### 4. Open the App
-
-Your browser should open automatically. If not, go to:
-```
-https://localhost:3000
-```
-
-> You'll see a certificate warning — that's normal. Click **Advanced** → **Proceed**. Haven uses a self-signed certificate for encryption.
-
-### 5. Create Your Admin Account
-
-1. Click **Register**
-2. Use the username `admin` (or whatever you set in your data directory's `.env`)
-3. Pick a password
-4. You're now the admin — you can create channels
-
-### 6. Create a Channel & Invite Friends
-
-1. Type a channel name in the sidebar and click **Create**
-2. A channel code appears (8 characters like `a3f8b2c1`)
-3. Send this code + your IP address to your friends
-4. They go to `https://YOUR_IP:3000`, register, and enter the code
-
----
-
-## Quick Start (Linux / macOS)
-
-```bash
-chmod +x start.sh
-./start.sh
-```
-
-The script handles everything: checks Node.js, installs dependencies, generates SSL certs, and launches.
-
-Or manually:
-```bash
-npm install
-node server.js
-```
 
 <img width="1917" height="911" alt="Screenshot 2026-02-16 013038" src="https://github.com/user-attachments/assets/79b62980-0822-4e9d-b346-c5a93de95862" />
+
 
 ---
 
@@ -201,13 +189,15 @@ Type `/` in the message box to see the full list. Here are some highlights:
 
 ## Themes
 
-12 themes, switchable from the sidebar:
+25 themes, switchable from the sidebar:
 
 **Haven** · **Discord** · **Matrix** · **Tron** · **HALO** · **Lord of the Rings** · **Cyberpunk** · **Nord** · **Dracula** · **Bloodborne** · **Ice** · **Abyss**
 
 Your theme choice persists across sessions.
 
+
 <img width="1919" height="908" alt="Screenshot 2026-02-16 013319" src="https://github.com/user-attachments/assets/f061491e-d998-4160-9971-b846cea83cd4" />
+
 
 ---
 
@@ -281,7 +271,6 @@ Haven **automatically generates self-signed SSL certificates** on first launch �
 | `Ctrl+F` | Search messages |
 | `@` | @mention autocomplete |
 | `/` | Slash command autocomplete |
-| `↑` `↓` | Navigate autocomplete |
 | `Tab` | Select autocomplete suggestion |
 
 ---
