@@ -107,7 +107,8 @@ class HavenE2E {
         this._base64ToBuf(ct)
       );
       return new TextDecoder().decode(decrypted);
-    } catch {
+    } catch (err) {
+      console.warn(`[E2E] Decrypt failed for partner ${partnerUserId}:`, err.message || err);
       return null;
     }
   }

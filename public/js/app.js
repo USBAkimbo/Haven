@@ -3820,13 +3820,12 @@ class HavenApp {
       ? `DM: ${channel.dm_target.username}` : channel ? channel.name : code;
 
     this.socket.emit('enter-channel', { code });
+    // E2E: fetch DM partner's public key BEFORE requesting messages
+    if (isDm && channel) this._fetchDMPartnerKey(channel);
     this.socket.emit('get-messages', { code });
     this.socket.emit('get-channel-members', { code });
     this.socket.emit('request-voice-users', { code });
     this._clearReply();
-
-    // E2E: fetch DM partner's public key when entering a DM
-    if (isDm && channel) this._fetchDMPartnerKey(channel);
 
     // Show verify-encryption button only in DM channels
     const verifyBtn = document.getElementById('e2e-verify-btn');
@@ -9962,9 +9961,19 @@ class HavenApp {
         // Listen for public key responses
         this.socket.on('public-key-result', (data) => {
           if (data.jwk) {
+            const oldKey = this._dmPublicKeys[data.userId];
+            const keyChanged = oldKey && (oldKey.x !== data.jwk.x || oldKey.y !== data.jwk.y);
             this._dmPublicKeys[data.userId] = data.jwk;
-            // Key just arrived — if we're viewing a DM with this user,
-            // re-fetch messages so they decrypt now that we have the key.
+            if (keyChanged) {
+              // Partner's key changed — invalidate the cached shared secret
+              // so ECDH re-derives with the new public key
+              this.e2e._sharedKeys = Object.fromEntries(
+                Object.entries(this.e2e._sharedKeys).filter(([k]) => !k.startsWith(data.userId + ':'))
+              );
+              console.warn(`[E2E] Partner ${data.userId} key changed — shared secret invalidated`);
+            }
+            // Key arrived or updated — if we're viewing a DM with this user,
+            // re-fetch messages so they decrypt with the current key.
             this._retryDecryptForUser(data.userId);
           }
         });
@@ -10003,13 +10012,14 @@ class HavenApp {
   }
 
   /**
-   * Fetch and cache the DM partner's public key when entering a DM channel.
+   * Fetch the DM partner's public key when entering a DM channel.
+   * Always re-fetches from the server to detect key changes (e.g. partner
+   * cleared browser data or switched devices, causing key regeneration).
    */
   _fetchDMPartnerKey(channel) {
     if (!this.e2e || !this.e2e.ready) return;
     if (!channel || !channel.is_dm || !channel.dm_target) return;
     const partnerId = channel.dm_target.id;
-    if (this._dmPublicKeys[partnerId]) return; // already cached
     this.socket.emit('get-public-key', { userId: partnerId });
   }
 
@@ -10080,10 +10090,15 @@ class HavenApp {
 
     const partnerId = ch.dm_target.id;
     const partnerJwk = this._dmPublicKeys[partnerId];
-    if (!partnerJwk) return; // no key yet — messages stay as ciphertext
 
     for (const msg of messages) {
       if (HavenE2E.isEncrypted(msg.content)) {
+        if (!partnerJwk) {
+          // Key not yet available — show placeholder (will retry when key arrives)
+          msg.content = '🔒 [Encrypted message — waiting for key...]';
+          msg._e2e = true;
+          continue;
+        }
         const plain = await this.e2e.decrypt(msg.content, partnerId, partnerJwk);
         if (plain !== null) {
           msg.content = plain;
