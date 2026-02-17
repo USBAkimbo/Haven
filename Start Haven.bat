@@ -61,10 +61,10 @@ exit /b 1
 :NODE_OK
 echo  [OK] Node.js found: & node -v
 
-:: Check if node_modules exists
-if not exist "%~dp0node_modules\" (
-    echo  [*] First run detected - installing dependencies...
-    cd /d "%~dp0"
+:: Check if dependencies are installed (check for a known package, not just the folder)
+cd /d "%~dp0"
+if not exist "%~dp0node_modules\dotenv\" (
+    echo  [*] Installing dependencies...
     npm install
     echo.
 )
