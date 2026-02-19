@@ -11,6 +11,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Haven uses [Sema
 
 ---
 
+## [2.0.1] — 2026-02-19
+
+### Fixed
+- **Security: removed GUI installer wizard** — the cross-platform GUI installer (PR #26) could open browser tabs and break running servers on the host machine. Reverted entirely.
+
+---
+
 ## [2.0.0] — 2026-02-19
 
 ### Added
