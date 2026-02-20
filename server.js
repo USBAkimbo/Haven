@@ -975,46 +975,98 @@ app.get('/api/link-preview', previewLimiter, async (req, res) => {
     return res.json(cached.data);
   }
 
+  // Use a real browser UA — many sites (Twitter/X, Instagram, etc.) serve
+  // JS-only pages to unknown bots, omitting the OG meta tags we need.
+  const PREVIEW_UA = 'Mozilla/5.0 (compatible; HavenBot/2.1; +https://github.com/ancsemi/Haven)';
+
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    let data = null;
 
-    const resp = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'HavenBot/1.0 (link preview)',
-        'Accept': 'text/html'
-      },
-      redirect: 'follow',
-      size: PREVIEW_MAX_SIZE
-    });
-    clearTimeout(timeout);
-
-    const contentType = resp.headers.get('content-type') || '';
-    if (!contentType.includes('text/html')) {
-      return res.json({ title: null, description: null, image: null, siteName: null });
+    // ── Site-specific oEmbed handlers ────────────────────
+    // Twitter / X — their HTML requires JS rendering, but the publish
+    // oEmbed API returns structured data directly.
+    const twitterMatch = url.match(/^https?:\/\/(?:(?:www\.|mobile\.)?(?:twitter|x)\.com|(?:fixupx|fxtwitter|vxtwitter)\.com)\/\w+\/status\/\d+/i);
+    if (twitterMatch) {
+      try {
+        const oembed = await fetch(
+          `https://publish.twitter.com/oembed?url=${encodeURIComponent(url)}&omit_script=true`,
+          { signal: AbortSignal.timeout(6000), headers: { 'User-Agent': PREVIEW_UA } }
+        );
+        if (oembed.ok) {
+          const oj = await oembed.json();
+          // Strip HTML tags from the embedded HTML to extract text
+          const text = (oj.html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          data = {
+            title: oj.author_name ? `${oj.author_name} on ${oj.provider_name || 'X'}` : (oj.provider_name || 'X'),
+            description: text.slice(0, 280) || null,
+            image: null, // Twitter oEmbed doesn't return images, OG scrape below may add one
+            siteName: oj.provider_name || 'X',
+            url: oj.url || url
+          };
+        }
+      } catch { /* fall through to generic scrape */ }
     }
 
-    const html = await resp.text();
-    // Truncate to max size for safety
-    const chunk = html.slice(0, PREVIEW_MAX_SIZE);
+    // ── Generic OG scrape ────────────────────────────────
+    if (!data) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
 
-    const getMetaContent = (property) => {
-      const ogRe = new RegExp(`<meta[^>]+(?:property|name)=["']${property}["'][^>]+content=["']([^"']+)["']`, 'i');
-      const ogRe2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${property}["']`, 'i');
-      const m = chunk.match(ogRe) || chunk.match(ogRe2);
-      return m ? m[1].trim() : null;
-    };
+      const resp = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': PREVIEW_UA,
+          'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'en-US,en;q=0.9'
+        },
+        redirect: 'follow'
+      });
+      clearTimeout(timeout);
 
-    const titleTag = chunk.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+        linkPreviewCache.set(url, { data: { title: null, description: null, image: null, siteName: null }, ts: Date.now() });
+        return res.json({ title: null, description: null, image: null, siteName: null });
+      }
 
-    const data = {
-      title: getMetaContent('og:title') || getMetaContent('twitter:title') || (titleTag ? titleTag[1].trim() : null),
-      description: getMetaContent('og:description') || getMetaContent('twitter:description') || getMetaContent('description'),
-      image: getMetaContent('og:image') || getMetaContent('twitter:image'),
-      siteName: getMetaContent('og:site_name') || new URL(url).hostname,
-      url: getMetaContent('og:url') || url
-    };
+      const html = await resp.text();
+      const chunk = html.slice(0, PREVIEW_MAX_SIZE);
+
+      // Regex helper — handles attributes spanning multiple lines and both
+      // orderings: property before content, and content before property.
+      const getMetaContent = (property) => {
+        const re1 = new RegExp(`<meta[^>]*?(?:property|name)=["']${property}["'][^>]*?content=["']([^"']+)["']`, 'is');
+        const re2 = new RegExp(`<meta[^>]*?content=["']([^"']+)["'][^>]*?(?:property|name)=["']${property}["']`, 'is');
+        const m = chunk.match(re1) || chunk.match(re2);
+        return m ? m[1].trim() : null;
+      };
+
+      const titleTag = chunk.match(/<title[^>]*>([^<]+)<\/title>/i);
+
+      data = {
+        title: getMetaContent('og:title') || getMetaContent('twitter:title') || (titleTag ? titleTag[1].trim() : null),
+        description: getMetaContent('og:description') || getMetaContent('twitter:description') || getMetaContent('description'),
+        image: getMetaContent('og:image') || getMetaContent('twitter:image'),
+        siteName: getMetaContent('og:site_name') || parsed.hostname,
+        url: getMetaContent('og:url') || url
+      };
+    } else {
+      // Twitter oEmbed succeeded — try a quick scrape for the image only
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const resp = await fetch(url, {
+          signal: controller.signal,
+          headers: { 'User-Agent': PREVIEW_UA, 'Accept': 'text/html' },
+          redirect: 'follow'
+        });
+        clearTimeout(timeout);
+        const html = (await resp.text()).slice(0, PREVIEW_MAX_SIZE);
+        const imgMatch = html.match(/<meta[^>]*?(?:property|name)=["'](?:og:image|twitter:image)["'][^>]*?content=["']([^"']+)["']/is)
+                      || html.match(/<meta[^>]*?content=["']([^"']+)["'][^>]*?(?:property|name)=["'](?:og:image|twitter:image)["']/is);
+        if (imgMatch) data.image = imgMatch[1].trim();
+      } catch { /* image is optional */ }
+    }
 
     linkPreviewCache.set(url, { data, ts: Date.now() });
 
