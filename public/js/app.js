@@ -9690,6 +9690,8 @@ class HavenApp {
               if (resultDiv) resultDiv.style.display = 'block';
               if (codeEl) codeEl.textContent = newest.code;
               nameInput.disabled = true;
+              // Auto-advance to step 3 after channel is created
+              this._wizardStep = 3;
               this._wizardUpdateUI();
             }
           }
