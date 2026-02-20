@@ -558,6 +558,64 @@ All settings are in the `.env` file in your **data directory**:
 
 ---
 
+## 🔐 End-to-End Encryption (E2E)
+
+All direct messages in Haven are **end-to-end encrypted**. The server never has access to the plaintext of your DMs or the keys needed to decrypt them.
+
+### How It Works
+
+- When you first log in, your browser generates an **ECDH P-256 key pair**.
+- The private key is encrypted (wrapped) with a key **derived from your password** using PBKDF2, and the encrypted blob is stored on the server for cross-device sync.
+- The server **never sees** your password-derived wrapping key — it's computed in your browser and never transmitted.
+- When you message someone, both users' public keys are combined via ECDH + HKDF to produce a shared AES-256-GCM encryption key. Messages are encrypted before leaving your browser.
+
+### When Keys Are Preserved (Old Messages Readable)
+
+| Scenario | Why it works |
+|---|---|
+| Close the tab and reopen it | IndexedDB still has your keys — no password needed |
+| Refresh the page | Same — IndexedDB survives refreshes |
+| JWT auto-login (return visit) | IndexedDB has the keys cached |
+| Log in on a new device/browser | You type your password → wrapping key is derived → server backup is downloaded and unwrapped |
+| Clear cookies (but NOT site data) | IndexedDB is site data, not cookies — keys survive |
+| Change your password | Private key is re-wrapped with the new password and re-uploaded — the ECDH key pair itself doesn't change |
+
+### When Keys Are Lost (Old Messages Permanently Unreadable)
+
+| Scenario | Why keys are lost |
+|---|---|
+| Clear all browser/site data when that's your only device | IndexedDB is wiped — on re-login the server backup may still unwrap if password hasn't changed |
+| Clear browser data **after** changing your password | Server backup was wrapped with the old password — new password can't unwrap it → new keys generated |
+| Manually reset encryption keys (🔄 button in DM header) | Intentional wipe — new key pair, old messages unreadable |
+| Admin deletes your account or resets the database | Server backup gone — if IndexedDB is also empty, fresh keys are generated |
+
+**Short version:** Same password + at least one of (IndexedDB **or** server backup) = keys survive. Lost both = old messages gone forever.
+
+### Can Anyone Intercept Messages?
+
+| Attack vector | Can they read messages? | Why |
+|---|---|---|
+| Server admin reading the database | **No** | Encrypted private key is wrapped with a key derived from YOUR password — admin has the blob but not the key |
+| Someone with physical server access | **No** | Same reason — the blob is useless without your password |
+| Man-in-the-middle on the network | **No** | Messages are encrypted client-side before transmission |
+| Stolen JWT token | **No** | JWT authenticates you, but E2E keys live in your browser's IndexedDB — attacker can't unwrap the server backup without your password |
+| Someone who knows your password + has your JWT | **Yes** | Equivalent to using your login — they can derive the wrapping key and decrypt everything |
+| Modified server JavaScript | **Yes** | If the admin pushes tampered JS that exfiltrates keys, all bets are off — this is true of every web-based E2E system |
+
+### Resetting Encryption Keys
+
+In any DM conversation, click the **🔄** button in the channel header to reset your encryption keys. This:
+- Generates a brand new key pair
+- Makes **all** previous encrypted messages **permanently unreadable** for both parties
+- Posts a timestamped notice in the chat so both users know when/why old messages became unreadable
+- Requires you to type **RESET** to confirm (there is no undo)
+
+### Verifying Encryption
+
+Click the **🔐** button in the DM header to view your **safety number** — a 60-digit code derived from both users' public keys. Compare it with your conversation partner through a separate channel (phone, in person, etc.). If they match, no one is intercepting your conversation.
+
+---
+
 ## 🆘 Troubleshooting
 
 **"SSL_ERROR_RX_RECORD_TOO_LONG" or "ERR_SSL_PROTOCOL_ERROR" in browser**

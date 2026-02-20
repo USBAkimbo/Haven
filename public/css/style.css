@@ -5932,6 +5932,176 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 }
 #e2e-recovery-dismiss:hover { color: var(--text-primary); }
 
+/* ── E2E Key Reset Confirmation Modal ─── */
+.e2e-reset-modal {
+  max-width: 460px;
+  text-align: center;
+}
+.e2e-reset-modal h3 {
+  color: var(--danger, #f44);
+  margin-bottom: 12px;
+}
+.e2e-reset-warning {
+  background: rgba(255, 68, 68, 0.08);
+  border: 1px solid rgba(255, 68, 68, 0.25);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: left;
+  line-height: 1.6;
+}
+.e2e-reset-warning strong {
+  color: var(--danger, #f44);
+}
+.e2e-reset-warning ul {
+  margin: 8px 0 0 16px;
+  padding: 0;
+}
+.e2e-reset-warning ul li {
+  margin-bottom: 4px;
+}
+.e2e-confirm-type {
+  margin: 16px 0 12px;
+}
+.e2e-confirm-type input {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  width: 100%;
+  max-width: 260px;
+  text-align: center;
+}
+.e2e-reset-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+}
+.btn-danger {
+  background: var(--danger, #f44);
+  color: #fff;
+  border: none;
+  padding: 6px 18px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.btn-danger.enabled {
+  opacity: 1;
+  pointer-events: auto;
+}
+.btn-danger.enabled:hover {
+  filter: brightness(1.15);
+}
+
+/* ── E2E Lock Menu Dropdown ─── */
+.e2e-menu-wrapper {
+  position: relative;
+}
+.e2e-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1000;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  min-width: 210px;
+  padding: 6px 0;
+  margin-top: 4px;
+}
+.e2e-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+.e2e-dropdown-item:hover {
+  background: rgba(255,255,255,0.06);
+}
+.e2e-dropdown-item.e2e-danger {
+  color: var(--danger, #f44);
+}
+.e2e-dropdown-item.e2e-danger:hover {
+  background: rgba(255, 68, 68, 0.10);
+}
+
+/* ── E2E Password Prompt Modal ─── */
+.e2e-password-modal {
+  max-width: 380px;
+  text-align: center;
+}
+.e2e-password-modal h3 {
+  margin-bottom: 8px;
+}
+.e2e-pw-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+.e2e-pw-field {
+  margin-bottom: 12px;
+}
+.e2e-pw-field input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+  text-align: center;
+  letter-spacing: 2px;
+}
+.e2e-pw-field input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.e2e-pw-error {
+  color: var(--danger, #f44);
+  font-size: 12px;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  background: rgba(255, 68, 68, 0.08);
+  border-radius: var(--radius-sm);
+}
+.e2e-pw-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+}
+.e2e-pw-actions .btn-accent:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ── E2E key-change system notice ─── */
+.system-message.e2e-notice {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 12px;
+  padding: 4px 16px;
+  opacity: 0.7;
+  text-align: center;
+}
+
 
 /* ═══════════════════════════════════════════════════════════
    INLINE EDIT TEXTAREA
@@ -9999,6 +10169,16 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   background: rgba(255,255,255,0.02);
   font-weight: 600;
   user-select: none;
+}
+.organize-tag-header.selected {
+  background: rgba(107,79,219,0.22);
+  opacity: 1;
+  cursor: pointer;
+}
+.organize-tag-header:hover:not(.selected) {
+  background: rgba(255,255,255,0.04);
+  opacity: 0.7;
+  cursor: pointer;
 }
 .organize-tag-header .tag-sort-select {
   margin-left: auto;

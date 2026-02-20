@@ -216,7 +216,13 @@
             <span class="header-actions-divider"></span>
             <button id="search-toggle-btn" class="icon-btn small" title="Search messages (Ctrl+F)">🔍</button>
             <button id="pinned-toggle-btn" class="icon-btn small" title="Pinned messages">📌</button>
-            <button id="e2e-verify-btn" class="icon-btn small" title="Verify encryption" style="display:none">🔐</button>
+            <div class="e2e-menu-wrapper" style="display:none" id="e2e-menu-wrapper">
+              <button id="e2e-menu-btn" class="icon-btn small" title="Encryption options">🔐</button>
+              <div class="e2e-dropdown" id="e2e-dropdown" style="display:none">
+                <button class="e2e-dropdown-item" id="e2e-verify-btn">🔑 Verify Encryption</button>
+                <button class="e2e-dropdown-item e2e-danger" id="e2e-reset-btn">🔄 Reset Encryption Keys</button>
+              </div>
+            </div>
           </div>
           <div class="search-container" id="search-container" style="display:none">
             <input type="text" id="search-input" class="search-input" placeholder="Search messages..." maxlength="100">
@@ -1361,6 +1367,15 @@
         </select>
       </div>
 
+      <div class="organize-toolbar" id="organize-cat-toolbar" style="display:none">
+        <label class="organize-toolbar-label">Categories:</label>
+        <select id="organize-cat-sort" class="organize-select">
+          <option value="manual">Manual Order</option>
+          <option value="az">A → Z</option>
+          <option value="za">Z → A</option>
+        </select>
+      </div>
+
       <div id="organize-channel-list" class="organize-list"></div>
 
       <div class="organize-controls">
@@ -1559,6 +1574,22 @@
     </div>
   </div>
 
+  <!-- E2E Password Prompt Modal -->
+  <div id="e2e-password-modal" class="modal-overlay" style="display:none">
+    <div class="modal e2e-password-modal">
+      <h3>🔐 Password Required</h3>
+      <p class="e2e-pw-desc">End-to-end encryption requires your password to unlock your keys. Enter your account password to continue.</p>
+      <div class="e2e-pw-field">
+        <input type="password" id="e2e-pw-input" placeholder="Enter your password" autocomplete="current-password" spellcheck="false">
+      </div>
+      <div id="e2e-pw-error" class="e2e-pw-error" style="display:none"></div>
+      <div class="e2e-pw-actions">
+        <button class="btn-accent" id="e2e-pw-submit-btn">Unlock</button>
+        <button class="btn-sm" id="e2e-pw-cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
 
   <!-- Image Lightbox Overlay -->
@@ -1570,7 +1601,7 @@
   <script src="/js/servers.js?v=1.8.0"></script>
   <script src="/js/voice.js?v=1.8.0"></script>
   <script src="/js/modmode.js?v=1.8.0"></script>
-  <script src="/js/e2e.js?v=1.8.0"></script>
-  <script src="/js/app.js?v=1.8.0"></script>
+  <script src="/js/e2e.js?v=2.1.0"></script>
+  <script src="/js/app.js?v=2.1.0"></script>
 </body>
 </html>

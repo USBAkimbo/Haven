@@ -7,6 +7,19 @@
     return;
   }
 
+  // ── E2E wrapping key derivation (mirrors HavenE2E.deriveWrappingKey) ───
+  async function deriveE2EWrappingKey(password) {
+    const enc = new TextEncoder();
+    const raw = await crypto.subtle.importKey(
+      'raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']
+    );
+    const bits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode('haven-e2e-wrapping-v3'), iterations: 210_000 },
+      raw, 256
+    );
+    return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   // ── Theme switching ───────────────────────────────────
   initThemeSwitcher('auth-theme-bar');
 
@@ -113,11 +126,13 @@
       const data = await res.json();
       if (!res.ok) return showError(data.error || 'Login failed');
 
+      // Derive E2E wrapping key from password (client-side only, never sent to server)
+      const e2eWrap = await deriveE2EWrappingKey(password);
+      sessionStorage.setItem('haven_e2e_wrap', e2eWrap);
+
       localStorage.setItem('haven_token', data.token);
       localStorage.setItem('haven_user', JSON.stringify(data.user));
       localStorage.setItem('haven_eula_accepted', '2.0');
-      // e2eSecret is included in data.user and stored in haven_user automatically
-      sessionStorage.setItem('haven_e2e_pw', password); // password fallback for one-time migration of old keys
       window.location.href = '/app';
     } catch (err) {
       showError('Connection error — is the server running?');
@@ -148,10 +163,13 @@
       const data = await res.json();
       if (!res.ok) return showError(data.error || 'Registration failed');
 
+      // Derive E2E wrapping key from password (client-side only, never sent to server)
+      const e2eWrap = await deriveE2EWrappingKey(password);
+      sessionStorage.setItem('haven_e2e_wrap', e2eWrap);
+
       localStorage.setItem('haven_token', data.token);
       localStorage.setItem('haven_user', JSON.stringify(data.user));
       localStorage.setItem('haven_eula_accepted', '2.0');
-      // e2eSecret is included in data.user and stored in haven_user automatically
       window.location.href = '/app';
     } catch (err) {
       showError('Connection error — is the server running?');

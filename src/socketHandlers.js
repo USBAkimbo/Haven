@@ -351,7 +351,7 @@ function setupSocketHandlers(io, db) {
 
     // Refresh display_name, avatar AND is_admin from DB (JWT may be stale)
     try {
-      const uRow = db.prepare('SELECT display_name, is_admin, username, avatar, avatar_shape, e2e_secret FROM users WHERE id = ?').get(user.id);
+      const uRow = db.prepare('SELECT display_name, is_admin, username, avatar, avatar_shape FROM users WHERE id = ?').get(user.id);
 
       // Identity cross-check: reject if the DB user_id now belongs to a different account
       // (happens when the database is reset/recreated and IDs get reassigned)
@@ -362,7 +362,6 @@ function setupSocketHandlers(io, db) {
       socket.user.displayName = (uRow && uRow.display_name) ? uRow.display_name : user.username;
       socket.user.avatar = (uRow && uRow.avatar) ? uRow.avatar : null;
       socket.user.avatar_shape = (uRow && uRow.avatar_shape) ? uRow.avatar_shape : 'circle';
-      socket.user.e2eSecret = (uRow && uRow.e2e_secret) ? uRow.e2e_secret : null;
       if (uRow) {
         // Sync admin status from .env (handles ADMIN_USERNAME changes)
         const shouldBeAdmin = uRow.username.toLowerCase() === ADMIN_USERNAME ? 1 : 0;
@@ -568,7 +567,6 @@ function setupSocketHandlers(io, db) {
       displayName: socket.user.displayName,
       avatar: socket.user.avatar || null,
       avatarShape: socket.user.avatar_shape || 'circle',
-      e2eSecret: socket.user.e2eSecret || null,
       version: HAVEN_VERSION,
       roles: socket.user.roles || [],
       effectiveLevel: socket.user.effectiveLevel || 0,
@@ -3152,6 +3150,7 @@ function setupSocketHandlers(io, db) {
         // Prevent accidental key overwrites: reject if a DIFFERENT key already exists
         // unless the client explicitly sets force=true (key reset / recovery)
         const current = db.prepare('SELECT public_key FROM users WHERE id = ?').get(socket.user.id);
+        let keyChanged = false;
         if (current && current.public_key && !data.force) {
           const existing = JSON.parse(current.public_key);
           if (existing.x !== publicJwk.x || existing.y !== publicJwk.y) {
@@ -3159,10 +3158,41 @@ function setupSocketHandlers(io, db) {
             socket.emit('public-key-conflict', { existing });
             return;
           }
+        } else if (current && current.public_key) {
+          const existing = JSON.parse(current.public_key);
+          keyChanged = existing.x !== publicJwk.x || existing.y !== publicJwk.y;
         }
         db.prepare('UPDATE users SET public_key = ? WHERE id = ?')
           .run(JSON.stringify(publicJwk), socket.user.id);
         socket.emit('public-key-published');
+
+        // If the key actually changed (force=true reset), notify all DM partners
+        // so they can clear cached shared secrets and re-derive with the new key
+        if (keyChanged) {
+          // Notify the user's OTHER sessions (other browsers/devices) to sync
+          for (const [, s] of io.sockets.sockets) {
+            if (s.user && s.user.id === socket.user.id && s !== socket) {
+              s.emit('e2e-key-sync');
+            }
+          }
+
+          // Notify DM partners so they get the new public key
+          const dmPartners = db.prepare(`
+            SELECT DISTINCT cm2.user_id FROM channel_members cm1
+            JOIN channels c ON c.id = cm1.channel_id AND c.is_dm = 1
+            JOIN channel_members cm2 ON cm2.channel_id = c.id AND cm2.user_id != ?
+            WHERE cm1.user_id = ?
+          `).all(socket.user.id, socket.user.id);
+
+          for (const partner of dmPartners) {
+            for (const [, s] of io.sockets.sockets) {
+              if (s.user && s.user.id === partner.user_id) {
+                s.emit('public-key-result', { userId: socket.user.id, jwk: publicJwk });
+              }
+            }
+          }
+          console.log(`[E2E] Notified ${dmPartners.length} DM partner(s) + other sessions of key change for user ${socket.user.id}`);
+        }
       } catch (err) {
         console.error('Publish public key error:', err);
         socket.emit('error-msg', 'Failed to store public key');
@@ -3964,7 +3994,6 @@ function setupSocketHandlers(io, db) {
               id: s.user.id, username: s.user.username, isAdmin: true,
               displayName: s.user.displayName, avatar: s.user.avatar || null,
               avatarShape: s.user.avatar_shape || 'circle',
-              e2eSecret: s.user.e2eSecret || null,
               version: HAVEN_VERSION, roles: s.user.roles,
               effectiveLevel: 100, permissions: ['*'],
               status: s.user.status || 'online',
@@ -3979,7 +4008,6 @@ function setupSocketHandlers(io, db) {
               id: s.user.id, username: s.user.username, isAdmin: false,
               displayName: s.user.displayName, avatar: s.user.avatar || null,
               avatarShape: s.user.avatar_shape || 'circle',
-              e2eSecret: s.user.e2eSecret || null,
               version: HAVEN_VERSION, roles: s.user.roles,
               effectiveLevel: s.user.effectiveLevel,
               permissions: getUserPermissions(socket.user.id),

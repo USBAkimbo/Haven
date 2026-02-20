@@ -105,12 +105,9 @@ router.post('/register', async (req, res) => {
     const hash = await bcrypt.hash(password, 12);
     const isAdmin = username.toLowerCase() === ADMIN_USERNAME ? 1 : 0;
 
-    // Generate a per-account E2E secret for persistent key wrapping
-    const e2eSecret = crypto.randomBytes(32).toString('hex');
-
     const result = db.prepare(
-      'INSERT INTO users (username, password_hash, is_admin, e2e_secret) VALUES (?, ?, ?, ?)'
-    ).run(username, hash, isAdmin, e2eSecret);
+      'INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)'
+    ).run(username, hash, isAdmin);
 
     // Auto-assign default "User" role to new users
     try {
@@ -138,7 +135,7 @@ router.post('/register', async (req, res) => {
 
     res.json({
       token,
-      user: { id: result.lastInsertRowid, username, isAdmin: !!isAdmin, displayName: username, e2eSecret }
+      user: { id: result.lastInsertRowid, username, isAdmin: !!isAdmin, displayName: username }
     });
   } catch (err) {
     console.error('Register error:', err);
@@ -191,12 +188,8 @@ router.post('/login', async (req, res) => {
 
     const displayName = user.display_name || user.username;
 
-    // Ensure the user has an E2E secret (generate on first login after migration)
-    let e2eSecret = user.e2e_secret;
-    if (!e2eSecret) {
-      e2eSecret = crypto.randomBytes(32).toString('hex');
-      db.prepare('UPDATE users SET e2e_secret = ? WHERE id = ?').run(e2eSecret, user.id);
-    }
+    // e2eSecret is no longer generated server-side (v3 true E2E — wrapping
+    // key is derived from the user's password client-side)
 
     const token = jwt.sign(
       { id: user.id, username: user.username, isAdmin: !!user.is_admin, displayName },
@@ -215,7 +208,7 @@ router.post('/login', async (req, res) => {
 
     res.json({
       token,
-      user: { id: user.id, username: user.username, isAdmin: !!user.is_admin, displayName, e2eSecret }
+      user: { id: user.id, username: user.username, isAdmin: !!user.is_admin, displayName }
     });
   } catch (err) {
     console.error('Login error:', err);
@@ -266,6 +259,31 @@ router.post('/change-password', async (req, res) => {
 });
 
 // ── Helpers ───────────────────────────────────────────────
+
+// ── Verify Password (lightweight, for E2E password prompt) ──
+router.post('/verify-password', async (req, res) => {
+  try {
+    const username = sanitizeString(req.body.username, 20);
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+    if (!username || !password) {
+      return res.status(400).json({ valid: false, error: 'Username and password required' });
+    }
+    const db = getDb();
+    const user = db.prepare('SELECT password_hash FROM users WHERE username = ?').get(username);
+    if (!user) {
+      return res.status(401).json({ valid: false, error: 'Invalid credentials' });
+    }
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) {
+      return res.status(401).json({ valid: false, error: 'Invalid credentials' });
+    }
+    res.json({ valid: true });
+  } catch (err) {
+    console.error('Verify password error:', err);
+    res.status(500).json({ valid: false, error: 'Server error' });
+  }
+});
+
 function verifyToken(token) {
   try {
     return jwt.verify(token, JWT_SECRET);

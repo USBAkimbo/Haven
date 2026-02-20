@@ -36,6 +36,9 @@ class HavenApp {
     this._dmPublicKeys = {};       // { userId → jwk } cache for DM partner public keys
     this._e2eListenersAttached = false;
     this._e2eInitDone = false;
+    this._e2eWrappingKey = null;   // wrapping key kept in memory for cross-device sync
+    this._pendingKeyReqs = {};     // userId → [resolve] for promise-based partner key fetch
+    this._pendingE2ENotice = null; // E2E notice text to re-append after message re-render
     this._oldestMsgId = null;      // oldest message ID in current view (for pagination)
     this._noMoreHistory = false;   // true when all history has been loaded
     this._loadingHistory = false;  // prevent concurrent history requests
@@ -396,6 +399,12 @@ class HavenApp {
         }
         this._renderMessages(data.messages);
       }
+
+      // Re-append any pending E2E notice (survives message re-render after key change)
+      if (this._pendingE2ENotice) {
+        this._appendE2ENotice(this._pendingE2ENotice);
+        this._pendingE2ENotice = null;
+      }
     });
 
     // ── Infinite scroll: load older messages on scroll-to-top ──
@@ -417,7 +426,7 @@ class HavenApp {
       // E2E: ensure partner key is available before decrypting
       const msgCh = this.channels.find(c => c.code === data.channelCode);
       if (msgCh && msgCh.is_dm && msgCh.dm_target && !this._dmPublicKeys[msgCh.dm_target.id]) {
-        this._fetchDMPartnerKey(msgCh);
+        await this._fetchDMPartnerKey(msgCh);
       }
       // E2E: decrypt single message if encrypted
       await this._decryptMessages([data.message]);
@@ -1111,23 +1120,54 @@ class HavenApp {
       }
       this._renderOrganizeList();
     });
-    document.getElementById('organize-move-up')?.addEventListener('click', () => {
-      if (!this._organizeSelected) return;
-      const idx = this._organizeList.findIndex(c => c.code === this._organizeSelected);
-      if (idx <= 0) return;
-      [this._organizeList[idx], this._organizeList[idx - 1]] = [this._organizeList[idx - 1], this._organizeList[idx]];
-      this._organizeList.forEach((c, i) => c.position = i);
+    document.getElementById('organize-cat-sort')?.addEventListener('change', (e) => {
+      if (!this._organizeParentCode) return;
+      this._organizeCatSort = e.target.value;
+      localStorage.setItem(`haven_cat_sort_${this._organizeParentCode}`, e.target.value);
       this._renderOrganizeList();
-      this.socket.emit('reorder-channels', { order: this._organizeList.map((c, i) => ({ code: c.code, position: i })) });
+      if (this._organizeServerLevel) this._renderChannels();
+    });
+    document.getElementById('organize-move-up')?.addEventListener('click', () => {
+      // Category movement
+      if (this._organizeSelectedTag) {
+        this._moveCategoryInOrder(-1);
+        return;
+      }
+      if (!this._organizeSelected) return;
+      const ch = this._organizeList.find(c => c.code === this._organizeSelected);
+      if (!ch) return;
+      const { group, effectiveSort } = this._getOrganizeVisualGroup(ch);
+      if (effectiveSort !== 'manual') return;
+      const groupIdx = group.findIndex(c => c.code === this._organizeSelected);
+      if (groupIdx <= 0) return;
+      // Swap in the sorted group, then reassign group positions cleanly
+      [group[groupIdx], group[groupIdx - 1]] = [group[groupIdx - 1], group[groupIdx]];
+      const positions = group.map(c => c.position ?? 0).sort((a, b) => a - b);
+      for (let i = 1; i < positions.length; i++) { if (positions[i] <= positions[i - 1]) positions[i] = positions[i - 1] + 1; }
+      group.forEach((c, i) => { c.position = positions[i]; });
+      this._renderOrganizeList();
+      this.socket.emit('reorder-channels', { order: this._organizeList.map(c => ({ code: c.code, position: c.position })) });
     });
     document.getElementById('organize-move-down')?.addEventListener('click', () => {
+      // Category movement
+      if (this._organizeSelectedTag) {
+        this._moveCategoryInOrder(1);
+        return;
+      }
       if (!this._organizeSelected) return;
-      const idx = this._organizeList.findIndex(c => c.code === this._organizeSelected);
-      if (idx < 0 || idx >= this._organizeList.length - 1) return;
-      [this._organizeList[idx], this._organizeList[idx + 1]] = [this._organizeList[idx + 1], this._organizeList[idx]];
-      this._organizeList.forEach((c, i) => c.position = i);
+      const ch = this._organizeList.find(c => c.code === this._organizeSelected);
+      if (!ch) return;
+      const { group, effectiveSort } = this._getOrganizeVisualGroup(ch);
+      if (effectiveSort !== 'manual') return;
+      const groupIdx = group.findIndex(c => c.code === this._organizeSelected);
+      if (groupIdx < 0 || groupIdx >= group.length - 1) return;
+      // Swap in the sorted group, then reassign group positions cleanly
+      [group[groupIdx], group[groupIdx + 1]] = [group[groupIdx + 1], group[groupIdx]];
+      const positions = group.map(c => c.position ?? 0).sort((a, b) => a - b);
+      for (let i = 1; i < positions.length; i++) { if (positions[i] <= positions[i - 1]) positions[i] = positions[i - 1] + 1; }
+      group.forEach((c, i) => { c.position = positions[i]; });
       this._renderOrganizeList();
-      this.socket.emit('reorder-channels', { order: this._organizeList.map((c, i) => ({ code: c.code, position: i })) });
+      this.socket.emit('reorder-channels', { order: this._organizeList.map(c => ({ code: c.code, position: c.position })) });
     });
     document.getElementById('organize-set-tag')?.addEventListener('click', () => {
       if (!this._organizeSelected) return;
@@ -1157,6 +1197,7 @@ class HavenApp {
       this._organizeParentCode = null;
       this._organizeList = null;
       this._organizeSelected = null;
+      this._organizeSelectedTag = null;
       this._organizeServerLevel = false;
     });
     document.getElementById('organize-modal')?.addEventListener('click', (e) => {
@@ -1166,6 +1207,7 @@ class HavenApp {
         this._organizeParentCode = null;
         this._organizeList = null;
         this._organizeSelected = null;
+        this._organizeSelectedTag = null;
         this._organizeServerLevel = false;
       }
     });
@@ -1531,8 +1573,45 @@ class HavenApp {
       document.getElementById('pinned-panel').style.display = 'none';
     });
 
-    // E2E verification code button
-    document.getElementById('e2e-verify-btn')?.addEventListener('click', () => this._showE2EVerification());
+    // E2E lock menu dropdown toggle
+    document.getElementById('e2e-menu-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dd = document.getElementById('e2e-dropdown');
+      dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+    });
+    // Close dropdown on outside click
+    document.addEventListener('click', () => {
+      const dd = document.getElementById('e2e-dropdown');
+      if (dd) dd.style.display = 'none';
+    });
+    document.getElementById('e2e-dropdown')?.addEventListener('click', (e) => e.stopPropagation());
+
+    // E2E verification code button (inside dropdown)
+    document.getElementById('e2e-verify-btn')?.addEventListener('click', () => {
+      document.getElementById('e2e-dropdown').style.display = 'none';
+      this._requireE2E(() => this._showE2EVerification());
+    });
+
+    // E2E reset encryption keys button (inside dropdown)
+    document.getElementById('e2e-reset-btn')?.addEventListener('click', () => {
+      document.getElementById('e2e-dropdown').style.display = 'none';
+      this._requireE2E(() => this._showE2EResetConfirmation());
+    });
+
+    // E2E password prompt modal handlers
+    document.getElementById('e2e-pw-submit-btn')?.addEventListener('click', () => this._submitE2EPassword());
+    document.getElementById('e2e-pw-cancel-btn')?.addEventListener('click', () => this._closeE2EPasswordModal());
+    document.getElementById('e2e-pw-input')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this._submitE2EPassword();
+    });
+    document.getElementById('e2e-password-modal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'e2e-password-modal') this._closeE2EPasswordModal();
+    });
+
+    // Rate limit tracking for E2E password prompt
+    this._e2ePwAttempts = [];
+    this._e2ePwLocked = false;
+    this._e2ePwPendingAction = null;
 
     // Global keyboard shortcuts
     document.addEventListener('keydown', (e) => {
@@ -1889,11 +1968,12 @@ class HavenApp {
         this.token = data.token;
         localStorage.setItem('haven_token', data.token);
 
-        // Re-wrap E2E private key with the account secret to ensure
-        // the server backup stays fresh (also migrates any old password-wrapped keys)
-        if (this.e2e && this.e2e.ready && this.user.e2eSecret) {
+        // Re-wrap E2E private key with a key derived from the NEW password
+        // so the server backup can be unlocked with the new credentials
+        if (this.e2e && this.e2e.ready && typeof HavenE2E !== 'undefined') {
           try {
-            await this.e2e.reWrapKey(this.socket, this.user.e2eSecret);
+            const newWrap = await HavenE2E.deriveWrappingKey(np);
+            await this.e2e.reWrapKey(this.socket, newWrap);
           } catch (err) {
             console.warn('[E2E] Failed to re-wrap key:', err);
           }
@@ -4237,7 +4317,7 @@ class HavenApp {
 
   // ── Channel Management ────────────────────────────────
 
-  switchChannel(code) {
+  async switchChannel(code) {
     if (this.currentChannel === code) return;
 
     // Clear any pending image queue from previous channel
@@ -4310,7 +4390,7 @@ class HavenApp {
 
     this.socket.emit('enter-channel', { code });
     // E2E: fetch DM partner's public key BEFORE requesting messages
-    if (isDm && channel) this._fetchDMPartnerKey(channel);
+    if (isDm && channel) await this._fetchDMPartnerKey(channel);
     this.socket.emit('get-messages', { code });
     this.socket.emit('get-channel-members', { code });
     this.socket.emit('request-voice-users', { code });
@@ -4320,9 +4400,12 @@ class HavenApp {
     const msgInput = document.getElementById('message-input');
     if (msgInput) setTimeout(() => msgInput.focus(), 50);
 
-    // Show verify-encryption button only in DM channels
-    const verifyBtn = document.getElementById('e2e-verify-btn');
-    if (verifyBtn) verifyBtn.style.display = isDm ? '' : 'none';
+    // Show E2E encryption menu only in DM channels
+    const e2eWrapper = document.getElementById('e2e-menu-wrapper');
+    if (e2eWrapper) e2eWrapper.style.display = isDm ? '' : 'none';
+    // Close dropdown when switching channels
+    const e2eDropdown = document.getElementById('e2e-dropdown');
+    if (e2eDropdown) e2eDropdown.style.display = 'none';
   }
 
   _updateTopicBar(topic) {
@@ -4556,7 +4639,10 @@ class HavenApp {
       this._organizeServerLevel = true;
       this._organizeList = [...parents].sort((a, b) => (a.position || 0) - (b.position || 0));
       this._organizeSelected = null;
+      this._organizeSelectedTag = null;
       this._organizeTagSorts = JSON.parse(localStorage.getItem('haven_tag_sorts___server__') || '{}');
+      this._organizeCatOrder = JSON.parse(localStorage.getItem('haven_cat_order___server__') || '[]');
+      this._organizeCatSort = localStorage.getItem('haven_cat_sort___server__') || 'az';
 
       document.getElementById('organize-modal-title').textContent = '📋 Organize Channels';
       document.getElementById('organize-modal-parent-name').textContent = 'Reorder channels and assign category tags';
@@ -4564,6 +4650,8 @@ class HavenApp {
       const sortSel = document.getElementById('organize-global-sort');
       const savedSort = localStorage.getItem('haven_server_sort_mode') || 'manual';
       sortSel.value = savedSort;
+      const catSortSel = document.getElementById('organize-cat-sort');
+      if (catSortSel) catSortSel.value = this._organizeCatSort;
       document.getElementById('organize-tag-input').value = '';
       this._renderOrganizeList();
       document.getElementById('organize-modal').style.display = 'flex';
@@ -4579,14 +4667,19 @@ class HavenApp {
     this._organizeServerLevel = false;
     this._organizeList = [...subs].sort((a, b) => (a.position || 0) - (b.position || 0));
     this._organizeSelected = null;
+    this._organizeSelectedTag = null;
     // Per-tag sort overrides: tag → 'manual'|'alpha'|'created'|'oldest' (persisted in localStorage)
     this._organizeTagSorts = JSON.parse(localStorage.getItem(`haven_tag_sorts_${parentCode}`) || '{}');
+    this._organizeCatOrder = JSON.parse(localStorage.getItem(`haven_cat_order_${parentCode}`) || '[]');
+    this._organizeCatSort = localStorage.getItem(`haven_cat_sort_${parentCode}`) || 'az';
 
     document.getElementById('organize-modal-title').textContent = '📋 Organize Sub-channels';
     document.getElementById('organize-modal-parent-name').textContent = `# ${parent.name}`;
     // Map sort_alphabetical: 0=manual, 1=alpha, 2=created
     const sortSel = document.getElementById('organize-global-sort');
     sortSel.value = parent.sort_alphabetical === 1 ? 'alpha' : parent.sort_alphabetical === 2 ? 'created' : parent.sort_alphabetical === 3 ? 'oldest' : 'manual';
+    const catSortSel = document.getElementById('organize-cat-sort');
+    if (catSortSel) catSortSel.value = this._organizeCatSort;
     document.getElementById('organize-tag-input').value = '';
     this._renderOrganizeList();
     document.getElementById('organize-modal').style.display = 'flex';
@@ -4598,9 +4691,45 @@ class HavenApp {
 
     let displayList = [...(this._organizeList || [])];
 
-    // Collect unique tags
-    const allTags = [...new Set(displayList.filter(c => c.category).map(c => c.category))].sort((a, b) => a.localeCompare(b));
-    const hasTags = allTags.length > 0;
+    // Collect unique tags (including __untagged__ as a sortable entry)
+    const realTags = [...new Set(displayList.filter(c => c.category).map(c => c.category))];
+    const hasUntagged = displayList.some(c => !c.category);
+    const hasTags = realTags.length > 0;
+    // Build the full ordered keys list: real tags + __untagged__ (if applicable)
+    const allKeys = [...realTags];
+    if (hasUntagged && hasTags) allKeys.push('__untagged__');
+
+    // Show/hide category toolbar
+    const catToolbar = document.getElementById('organize-cat-toolbar');
+    if (catToolbar) catToolbar.style.display = hasTags ? 'flex' : 'none';
+
+    // Sort category headers by chosen mode
+    const catSort = this._organizeCatSort || 'az';
+    if (catSort === 'az') {
+      allKeys.sort((a, b) => {
+        if (a === '__untagged__') return 1; if (b === '__untagged__') return -1;
+        return a.localeCompare(b);
+      });
+    } else if (catSort === 'za') {
+      allKeys.sort((a, b) => {
+        if (a === '__untagged__') return 1; if (b === '__untagged__') return -1;
+        return b.localeCompare(a);
+      });
+    } else {
+      // manual — use stored order
+      const order = this._organizeCatOrder || [];
+      allKeys.sort((a, b) => {
+        const ia = order.indexOf(a);
+        const ib = order.indexOf(b);
+        if (ia === -1 && ib === -1) {
+          if (a === '__untagged__') return 1; if (b === '__untagged__') return -1;
+          return a.localeCompare(b);
+        }
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      });
+    }
 
     // Sort within each tag group
     const sortGroup = (arr, mode) => {
@@ -4619,16 +4748,18 @@ class HavenApp {
     // Build grouped display
     let grouped = [];
     if (hasTags) {
-      // Tagged groups first, then untagged
-      for (const tag of allTags) {
-        const tagSort = this._organizeTagSorts[tag] || globalSort;
-        const tagItems = sortGroup(displayList.filter(c => c.category === tag), tagSort);
-        grouped.push({ tag, items: tagItems, sort: tagSort });
-      }
-      const untagged = displayList.filter(c => !c.category);
-      if (untagged.length) {
-        const untaggedSort = this._organizeTagSorts['__untagged__'] || globalSort;
-        grouped.push({ tag: '', items: sortGroup(untagged, untaggedSort), sort: untaggedSort });
+      for (const key of allKeys) {
+        if (key === '__untagged__') {
+          const untagged = displayList.filter(c => !c.category);
+          if (untagged.length) {
+            const untaggedSort = this._organizeTagSorts['__untagged__'] || globalSort;
+            grouped.push({ tag: '', items: sortGroup(untagged, untaggedSort), sort: untaggedSort });
+          }
+        } else {
+          const tagSort = this._organizeTagSorts[key] || globalSort;
+          const tagItems = sortGroup(displayList.filter(c => c.category === key), tagSort);
+          grouped.push({ tag: key, items: tagItems, sort: tagSort });
+        }
       }
     } else {
       grouped.push({ tag: '', items: sortGroup(displayList, globalSort), sort: globalSort });
@@ -4640,7 +4771,8 @@ class HavenApp {
       if (hasTags) {
         const tagKey = group.tag || '__untagged__';
         const label = group.tag ? this._escapeHtml(group.tag) : 'Untagged';
-        html += `<div class="organize-tag-header" data-tag-key="${this._escapeHtml(tagKey)}">
+        const isTagSelected = this._organizeSelectedTag === tagKey;
+        html += `<div class="organize-tag-header${isTagSelected ? ' selected' : ''}" data-tag-key="${this._escapeHtml(tagKey)}">
           <span>${label}</span>
           <select class="tag-sort-select" data-tag="${this._escapeHtml(tagKey)}" title="Sort this group">
             <option value="manual"${group.sort === 'manual' ? ' selected' : ''}>Manual</option>
@@ -4669,12 +4801,24 @@ class HavenApp {
 
     listEl.innerHTML = html;
 
-    // Click to select
+    // Click to select channel
     listEl.querySelectorAll('.organize-item').forEach(el => {
       el.addEventListener('click', () => {
         this._organizeSelected = el.dataset.code;
+        this._organizeSelectedTag = null; // clear tag selection
         const ch = this._organizeList.find(c => c.code === el.dataset.code);
         document.getElementById('organize-tag-input').value = (ch && ch.category) || '';
+        this._renderOrganizeList();
+      });
+    });
+
+    // Click tag header to select category
+    listEl.querySelectorAll('.organize-tag-header').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.classList.contains('tag-sort-select')) return; // ignore dropdown clicks
+        this._organizeSelectedTag = el.dataset.tagKey;
+        this._organizeSelected = null; // clear channel selection
+        document.getElementById('organize-tag-input').value = '';
         this._renderOrganizeList();
       });
     });
@@ -4692,19 +4836,120 @@ class HavenApp {
       });
     });
 
-    // Disable up/down when not manual sort or nothing selected
-    const effectiveSort = this._organizeSelected
-      ? (() => {
-          const ch = this._organizeList.find(c => c.code === this._organizeSelected);
-          const tag = ch && ch.category ? ch.category : '__untagged__';
-          return this._organizeTagSorts[tag] || globalSort;
-        })()
-      : globalSort;
-    const isManual = effectiveSort === 'manual';
-    document.getElementById('organize-move-up').disabled = !isManual || !this._organizeSelected;
-    document.getElementById('organize-move-down').disabled = !isManual || !this._organizeSelected;
+    // Disable up/down based on selection type
+    let canMoveUp = false, canMoveDown = false;
+    if (this._organizeSelectedTag) {
+      // Category selected — always allow movement; handler auto-switches to manual mode
+      const orderedTags = grouped.map(g => g.tag || '__untagged__');
+      const tagIdx = orderedTags.indexOf(this._organizeSelectedTag);
+      canMoveUp = tagIdx > 0;
+      canMoveDown = tagIdx >= 0 && tagIdx < orderedTags.length - 1;
+    } else if (this._organizeSelected) {
+      // Channel selected — can move if its tag group sort is manual
+      const ch = this._organizeList.find(c => c.code === this._organizeSelected);
+      if (ch) {
+        const { group, effectiveSort } = this._getOrganizeVisualGroup(ch);
+        if (effectiveSort === 'manual') {
+          const groupIdx = group.findIndex(c => c.code === this._organizeSelected);
+          canMoveUp = groupIdx > 0;
+          canMoveDown = groupIdx >= 0 && groupIdx < group.length - 1;
+        }
+      }
+    }
+    document.getElementById('organize-move-up').disabled = !canMoveUp;
+    document.getElementById('organize-move-down').disabled = !canMoveDown;
     document.getElementById('organize-set-tag').disabled = !this._organizeSelected;
     document.getElementById('organize-remove-tag').disabled = !this._organizeSelected;
+  }
+
+  /**
+   * Get the sorted visual group of channels for the organize modal.
+   * Returns the channels in the same tag group as `ch`, sorted by
+   * the effective sort mode, plus the sort mode string.
+   */
+  _getOrganizeVisualGroup(ch) {
+    const globalSort = document.getElementById('organize-global-sort').value;
+    const tagKey = ch.category || '__untagged__';
+    const effectiveSort = this._organizeTagSorts[tagKey] || globalSort;
+
+    // Collect channels in the same tag group
+    const group = ch.category
+      ? this._organizeList.filter(c => c.category === ch.category)
+      : this._organizeList.filter(c => !c.category);
+
+    // Sort by effective mode (mirrors _renderOrganizeList's sortGroup)
+    if (effectiveSort === 'alpha') {
+      group.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (effectiveSort === 'created') {
+      group.sort((a, b) => (b.id || 0) - (a.id || 0));
+    } else if (effectiveSort === 'oldest') {
+      group.sort((a, b) => (a.id || 0) - (b.id || 0));
+    } else {
+      group.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    }
+
+    return { group, effectiveSort };
+  }
+
+  /**
+   * Move a category group up or down in the order.
+   * @param {number} direction -1 for up, +1 for down
+   */
+  _moveCategoryInOrder(direction) {
+    if (!this._organizeSelectedTag) return;
+
+    // Build full ordered keys (real tags + __untagged__) from channel data
+    const displayList = [...(this._organizeList || [])];
+    const realTags = [...new Set(displayList.filter(c => c.category).map(c => c.category))];
+    const hasUntagged = displayList.some(c => !c.category);
+    const allKeys = [...realTags];
+    if (hasUntagged) allKeys.push('__untagged__');
+
+    // Sort by current mode to match the visual order (same logic as _renderOrganizeList)
+    const catSort = this._organizeCatSort || 'az';
+    if (catSort === 'az') {
+      allKeys.sort((a, b) => {
+        if (a === '__untagged__') return 1; if (b === '__untagged__') return -1;
+        return a.localeCompare(b);
+      });
+    } else if (catSort === 'za') {
+      allKeys.sort((a, b) => {
+        if (a === '__untagged__') return 1; if (b === '__untagged__') return -1;
+        return b.localeCompare(a);
+      });
+    } else {
+      const order = this._organizeCatOrder || [];
+      allKeys.sort((a, b) => {
+        const ia = order.indexOf(a);
+        const ib = order.indexOf(b);
+        if (ia === -1 && ib === -1) {
+          if (a === '__untagged__') return 1; if (b === '__untagged__') return -1;
+          return a.localeCompare(b);
+        }
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      });
+    }
+
+    const idx = allKeys.indexOf(this._organizeSelectedTag);
+    const targetIdx = idx + direction;
+    if (idx < 0 || targetIdx < 0 || targetIdx >= allKeys.length) return;
+
+    // Swap
+    [allKeys[idx], allKeys[targetIdx]] = [allKeys[targetIdx], allKeys[idx]];
+
+    // Switch to manual mode
+    this._organizeCatSort = 'manual';
+    this._organizeCatOrder = allKeys;
+    document.getElementById('organize-cat-sort').value = 'manual';
+
+    // Persist
+    localStorage.setItem(`haven_cat_order_${this._organizeParentCode}`, JSON.stringify(allKeys));
+    localStorage.setItem(`haven_cat_sort_${this._organizeParentCode}`, 'manual');
+
+    this._renderOrganizeList();
+    if (this._organizeServerLevel) this._renderChannels();
   }
 
   /* ── DM Organize (client-side, localStorage) ─────────── */
@@ -4891,13 +5136,26 @@ class HavenApp {
       // Load per-tag sort overrides
       const tagOverrides = parent ? JSON.parse(localStorage.getItem(`haven_tag_sorts_${parent.code}`) || '{}') : {};
 
-      // Tag grouping helper (groups by tag name)
+      // Tag grouping helper (groups by tag name, respects stored category order)
+      const catOrder = parent ? JSON.parse(localStorage.getItem(`haven_cat_order_${parent.code}`) || '[]') : [];
+      const catSort = parent ? (localStorage.getItem(`haven_cat_sort_${parent.code}`) || 'az') : 'az';
       const tagGroup = (a, b) => {
-        const tagA = (a.category || '').toLowerCase();
-        const tagB = (b.category || '').toLowerCase();
+        const tagA = a.category || '';
+        const tagB = b.category || '';
         if (tagA !== tagB) {
+          const keyA = tagA || '__untagged__';
+          const keyB = tagB || '__untagged__';
+          if (catSort === 'manual') {
+            const iA = catOrder.indexOf(keyA); const iB = catOrder.indexOf(keyB);
+            if (iA !== -1 || iB !== -1) {
+              if (iA === -1) return 1; if (iB === -1) return -1;
+              return iA - iB;
+            }
+          }
+          // Default: untagged at bottom, then alphabetical
           if (!tagA) return 1;
           if (!tagB) return -1;
+          if (catSort === 'za') return tagB.localeCompare(tagA);
           return tagA.localeCompare(tagB);
         }
         return 0;
@@ -4942,13 +5200,28 @@ class HavenApp {
       return (a.position || 0) - (b.position || 0) || a.name.localeCompare(b.name); // manual
     };
 
+    // Load stored category order for server-level categories
+    const serverCatOrder = JSON.parse(localStorage.getItem('haven_cat_order___server__') || '[]');
+    const serverCatSort = localStorage.getItem('haven_cat_sort___server__') || 'az';
+
     if (parentHasTags) {
       const tagGroup = (a, b) => {
-        const tagA = (a.category || '').toLowerCase();
-        const tagB = (b.category || '').toLowerCase();
+        const tagA = a.category || '';
+        const tagB = b.category || '';
         if (tagA !== tagB) {
+          const keyA = tagA || '__untagged__';
+          const keyB = tagB || '__untagged__';
+          if (serverCatSort === 'manual') {
+            const iA = serverCatOrder.indexOf(keyA); const iB = serverCatOrder.indexOf(keyB);
+            if (iA !== -1 || iB !== -1) {
+              if (iA === -1) return 1; if (iB === -1) return -1;
+              return iA - iB;
+            }
+          }
+          // Default: untagged at bottom, then alphabetical
           if (!tagA) return 1;
           if (!tagB) return -1;
+          if (serverCatSort === 'za') return tagB.localeCompare(tagA);
           return tagA.localeCompare(tagB);
         }
         return 0;
@@ -5079,7 +5352,18 @@ class HavenApp {
     });
 
     const sortedCats = [...categories.keys()].sort((a, b) => {
+      const keyA = a || '__untagged__';
+      const keyB = b || '__untagged__';
+      if (serverCatSort === 'manual') {
+        const iA = serverCatOrder.indexOf(keyA); const iB = serverCatOrder.indexOf(keyB);
+        if (iA !== -1 || iB !== -1) {
+          if (iA === -1) return 1; if (iB === -1) return -1;
+          return iA - iB;
+        }
+      }
+      // Default: untagged first (empty string), then alphabetical
       if (!a) return -1; if (!b) return 1;
+      if (serverCatSort === 'za') return b.localeCompare(a);
       return a.localeCompare(b);
     });
 
@@ -5420,13 +5704,12 @@ class HavenApp {
       const isDm = ch && ch.is_dm && ch.dm_target;
       let partner = this._getE2EPartner();
 
-      // If DM but partner key not yet cached, request it and wait briefly
+      // If DM but partner key not yet cached, request it via promise
       if (isDm && !partner && this.e2e && this.e2e.ready) {
-        this.socket.emit('get-public-key', { userId: ch.dm_target.id });
-        for (let i = 0; i < 20; i++) {
-          await new Promise(r => setTimeout(r, 100));
+        const jwk = await this.e2e.requestPartnerKey(this.socket, ch.dm_target.id);
+        if (jwk) {
+          this._dmPublicKeys[ch.dm_target.id] = jwk;
           partner = this._getE2EPartner();
-          if (partner) break;
         }
         if (!partner) {
           this._showToast('Encryption key unavailable — message sent without E2E', 'warning');
@@ -9558,7 +9841,7 @@ class HavenApp {
         serverCodeEl.style.opacity = code ? '1' : '0.4';
       }
 
-      this._renderPermThresholds();
+      if (typeof this._renderPermThresholds === 'function') this._renderPermThresholds();
     }
 
     // Always update visual branding regardless of modal state
@@ -11610,154 +11893,315 @@ class HavenApp {
     if (typeof HavenE2E === 'undefined') return;
     try {
       this.e2e = new HavenE2E();
-      // e2eSecret is always available: comes from server in session-info → stored in this.user
-      const e2eSecret = this.user.e2eSecret || null;
-      // Password fallback for migrating old password-wrapped keys (only on form login)
-      const pw = sessionStorage.getItem('haven_e2e_pw');
-      const ok = await this.e2e.init(this.socket, e2eSecret, pw || null);
-      // Clear password immediately — only needed for one-time migration
-      sessionStorage.removeItem('haven_e2e_pw');
+      // Read the password-derived wrapping key from sessionStorage (set during login).
+      // On auto-login (JWT, no password) this will be null — IndexedDB-only mode.
+      const wrappingKey = sessionStorage.getItem('haven_e2e_wrap') || null;
+      const ok = await this.e2e.init(this.socket, wrappingKey);
+      // Keep wrapping key in memory for cross-device sync (conflict resolution).
+      // Clear from sessionStorage but retain privately for backup restoration.
+      if (wrappingKey) {
+        this._e2eWrappingKey = wrappingKey;
+        sessionStorage.removeItem('haven_e2e_wrap');
+      }
       if (ok) {
-        this._e2eSetupListeners();
-      } else if (this.e2e.needsPassword) {
-        // Only happens if e2eSecret is missing AND no password — edge case
-        this._showE2EPasswordRecovery();
+        await this._e2eSetupListeners();
+        // If keys were auto-reset during init (backup unwrap failed), notify
+        if (this.e2e.keysWereReset) {
+          setTimeout(() => {
+            this._appendE2ENotice(`🔄 Encryption keys were regenerated — ${new Date().toLocaleString()}. Previous encrypted messages may no longer be decryptable.`);
+          }, 500);
+        }
+      } else {
+        console.warn('[E2E] Init returned false — encryption unavailable');
+        // Don't null out e2e if server backup exists — we may sync later
+        if (!this.e2e._serverBackupExists) this.e2e = null;
       }
     } catch (err) {
       console.warn('[E2E] Init failed:', err);
       this.e2e = null;
-      sessionStorage.removeItem('haven_e2e_pw');
     }
   }
 
-  /** Set up E2E listeners and publish key after successful init */
-  _e2eSetupListeners() {
-    // Publish our public key to the server
-    const publishData = { jwk: this.e2e.publicKeyJwk };
-    // Check both app-level flag and e2e-level flag (set by resetKeys auto-reset)
-    if (this._e2eForcePublish || (this.e2e && this.e2e._forcePublish)) {
-      publishData.force = true;
-      this._e2eForcePublish = false;
-      if (this.e2e) this.e2e._forcePublish = false;
-    }
-    this.socket.emit('publish-public-key', publishData);
-    // Listen for public key responses (only attach once)
-    if (!this._e2eListenersAttached) {
-      this._e2eListenersAttached = true;
-      this.socket.on('public-key-result', (data) => {
-        if (data.jwk) {
-          const oldKey = this._dmPublicKeys[data.userId];
-          const keyChanged = oldKey && (oldKey.x !== data.jwk.x || oldKey.y !== data.jwk.y);
-          this._dmPublicKeys[data.userId] = data.jwk;
-          if (keyChanged) {
-            // Partner's key changed — invalidate the cached shared secret
-            // so ECDH re-derives with the new public key
-            this.e2e._sharedKeys = Object.fromEntries(
-              Object.entries(this.e2e._sharedKeys).filter(([k]) => !k.startsWith(data.userId + ':'))
-            );
-            console.warn(`[E2E] Partner ${data.userId} key changed — shared secret invalidated`);
-          }
-          // Key arrived or updated — if we're viewing a DM with this user,
-          // re-fetch messages so they decrypt with the current key.
-          this._retryDecryptForUser(data.userId);
-        }
-      });
-      // Handle public key conflict — our IndexedDB key doesn't match server's
-      // Force-publish since we actually have the private key (server's is stale)
-      this.socket.on('public-key-conflict', () => {
-        console.warn('[E2E] Public key conflict — force-publishing our key');
-        this.socket.emit('publish-public-key', { jwk: this.e2e.publicKeyJwk, force: true });
-      });
-    }
-    console.log('[E2E] Initialized, public key published');
-  }
+  /** Publish our key and wire up partner-key listeners (idempotent). */
+  async _e2eSetupListeners() {
+    // Publish our public key (force if keys were explicitly reset)
+    const result = await this.e2e.publishKey(this.socket, this.e2e.keysWereReset);
 
-  /** Show a banner prompting the user to re-enter their password to unlock E2E */
-  _showE2EPasswordRecovery() {
-    const existing = document.getElementById('e2e-recovery-banner');
-    if (existing) existing.remove();
-
-    const isLost = this.e2e && this.e2e.keyBackupLost;
-    const message = isLost
-      ? '🔒 Encryption backup was lost. Enter your password to generate new keys (old encrypted messages will be unreadable).'
-      : '🔒 Enter your password to unlock end-to-end encryption';
-    const buttonText = isLost ? 'Reset Keys' : 'Unlock';
-
-    const banner = document.createElement('div');
-    banner.id = 'e2e-recovery-banner';
-    banner.innerHTML = `
-      <div class="e2e-recovery-inner">
-        <span>${message}</span>
-        <input type="password" id="e2e-recovery-pw" placeholder="Password" autocomplete="current-password">
-        <button class="btn-sm btn-accent" id="e2e-recovery-btn">${buttonText}</button>
-        <button class="btn-sm" id="e2e-recovery-dismiss">✕</button>
-      </div>
-    `;
-    const chatArea = document.getElementById('messages');
-    if (chatArea && chatArea.parentElement) {
-      chatArea.parentElement.insertBefore(banner, chatArea);
-    }
-    banner.querySelector('#e2e-recovery-btn').addEventListener('click', async () => {
-      const pw = banner.querySelector('#e2e-recovery-pw').value;
-      if (!pw) return;
-      const btn = banner.querySelector('#e2e-recovery-btn');
-      btn.textContent = isLost ? 'Resetting…' : 'Unlocking…';
-      btn.disabled = true;
-      const e2eSecret = this.user.e2eSecret || null;
-      const ok = await this.e2e.recoverWithPassword(this.socket, pw, e2eSecret);
-      if (ok) {
-        banner.remove();
-        // If keys were reset, force-publish the new public key
-        if (this.e2e._forcePublish) {
-          this._e2eForcePublish = true;
-          this.e2e._forcePublish = false;
-        }
-        this._e2eSetupListeners();
-        this._showToast(isLost ? 'Encryption keys reset ✓' : 'Encryption keys recovered ✓', 'success');
-        // Re-fetch current DM messages to decrypt them
-        if (this.currentChannel) {
-          this._oldestMsgId = null;
-          this._noMoreHistory = false;
-          this._loadingHistory = false;
-          this._historyBefore = null;
-          this.socket.emit('get-messages', { code: this.currentChannel });
+    // Handle publish conflict: server has a different key (another device changed it).
+    // Sync from the server backup instead of overwriting.
+    if (result.conflict) {
+      console.warn('[E2E] Server has a different key — syncing from server backup...');
+      const wrappingKey = this._e2eWrappingKey || sessionStorage.getItem('haven_e2e_wrap') || null;
+      if (wrappingKey) {
+        const synced = await this.e2e.syncFromServer(this.socket, wrappingKey);
+        if (synced) {
+          // After sync, re-publish: the key now matches the server backup,
+          // so the server should accept it. Use force=true to handle the edge case
+          // where the public_key column differs from the encrypted backup.
+          await this.e2e.publishKey(this.socket, true);
+          this._dmPublicKeys = {};
+          this._showToast('Encryption keys synced from another device', 'success');
+        } else {
+          this._showToast('Could not sync encryption keys — try re-entering your password', 'error');
         }
       } else {
-        btn.textContent = buttonText;
-        btn.disabled = false;
-        this._showToast('Wrong password — try again', 'error');
+        // No wrapping key — need password
+        this._showToast('Encryption keys changed on another device — re-enter your password to sync', 'error');
+        this._e2ePwPendingAction = () => this._syncE2EFromServer();
+        this._showE2EPasswordModal();
       }
+    }
+
+    // Only attach socket listeners once
+    if (this._e2eListenersAttached) return;
+    this._e2eListenersAttached = true;
+
+    this.socket.on('public-key-result', (data) => {
+      if (!data.jwk) return;
+      const oldKey = this._dmPublicKeys[data.userId];
+      const changed = oldKey && (oldKey.x !== data.jwk.x || oldKey.y !== data.jwk.y);
+      this._dmPublicKeys[data.userId] = data.jwk;
+
+      if (changed && this.e2e) {
+        this.e2e.clearSharedKey(data.userId);
+        console.warn(`[E2E] Partner ${data.userId} key changed — cache invalidated`);
+
+        // Post a visible notice if we're currently viewing a DM with this partner.
+        // Store it so it survives the message re-render triggered by _retryDecryptForUser.
+        const ch = this.channels.find(c => c.code === this.currentChannel);
+        if (ch && ch.is_dm && ch.dm_target && ch.dm_target.id === data.userId) {
+          this._pendingE2ENotice = `🔄 ${ch.dm_target.username}'s encryption keys changed — ${new Date().toLocaleString()}. Previously encrypted messages may no longer be decryptable.`;
+        }
+      }
+
+      // Resolve any pending requestPartnerKey promises for this user
+      // (not used when e2e.requestPartnerKey handles it, but covers
+      //  the case where _fetchDMPartnerKey fires a fire-and-forget)
+      this._retryDecryptForUser(data.userId);
     });
-    banner.querySelector('#e2e-recovery-pw').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') banner.querySelector('#e2e-recovery-btn').click();
-    });
-    banner.querySelector('#e2e-recovery-dismiss').addEventListener('click', () => {
-      banner.remove();
+
+    console.log('[E2E] Listeners attached, key published');
+
+    // Listen for key sync from another session of the same user
+    this.socket.on('e2e-key-sync', async () => {
+      console.log('[E2E] Key changed on another session — syncing...');
+      const wrappingKey = this._e2eWrappingKey || sessionStorage.getItem('haven_e2e_wrap') || null;
+      if (wrappingKey && this.e2e) {
+        const synced = await this.e2e.syncFromServer(this.socket, wrappingKey);
+        if (synced) {
+          await this.e2e.publishKey(this.socket);
+          this._dmPublicKeys = {};
+          this._showToast('Encryption keys synced', 'success');
+          // Re-fetch messages if in a DM to re-decrypt
+          const ch = this.channels.find(c => c.code === this.currentChannel);
+          if (ch && ch.is_dm) {
+            this._oldestMsgId = null;
+            this._noMoreHistory = false;
+            this._loadingHistory = false;
+            this._historyBefore = null;
+            this.socket.emit('get-messages', { code: this.currentChannel });
+          }
+          return;
+        }
+      }
+      // No wrapping key or sync failed — prompt for password
+      this._showToast('Encryption keys changed on another device — re-enter your password to sync', 'error');
+      this._e2ePwPendingAction = () => this._syncE2EFromServer();
+      this._showE2EPasswordModal();
     });
   }
 
   /**
-   * Get the E2E partner user ID for the current channel (if it's a DM).
+   * Sync E2E keys from the server backup (called after password prompt or conflict detection).
+   */
+  async _syncE2EFromServer() {
+    const wrappingKey = this._e2eWrappingKey || sessionStorage.getItem('haven_e2e_wrap') || null;
+    if (!wrappingKey || !this.e2e) return;
+
+    const synced = await this.e2e.syncFromServer(this.socket, wrappingKey);
+    if (synced) {
+      await this.e2e.publishKey(this.socket);
+      this._dmPublicKeys = {};
+      this._showToast('Encryption keys synced from another device', 'success');
+      // Re-fetch messages if in a DM
+      const ch = this.channels.find(c => c.code === this.currentChannel);
+      if (ch && ch.is_dm) {
+        this._oldestMsgId = null;
+        this._noMoreHistory = false;
+        this._loadingHistory = false;
+        this._historyBefore = null;
+        this.socket.emit('get-messages', { code: this.currentChannel });
+      }
+    } else {
+      this._showToast('Key sync failed — encryption may not work correctly', 'error');
+    }
+  }
+
+  /**
+   * Require E2E to be ready before executing an action.
+   * If E2E isn't ready (no password was provided at login), shows the password prompt.
+   * @param {Function} action - Callback to run once E2E is available
+   */
+  _requireE2E(action) {
+    if (this.e2e && this.e2e.ready) {
+      action();
+      return;
+    }
+    // E2E not available — prompt for password
+    this._e2ePwPendingAction = action;
+    this._showE2EPasswordModal();
+  }
+
+  /**
+   * Show the E2E password prompt modal.
+   */
+  _showE2EPasswordModal() {
+    const modal = document.getElementById('e2e-password-modal');
+    const input = document.getElementById('e2e-pw-input');
+    const errorEl = document.getElementById('e2e-pw-error');
+    const submitBtn = document.getElementById('e2e-pw-submit-btn');
+
+    input.value = '';
+    errorEl.style.display = 'none';
+    errorEl.textContent = '';
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Unlock';
+
+    // Check rate limit
+    const now = Date.now();
+    this._e2ePwAttempts = (this._e2ePwAttempts || []).filter(t => now - t < 60_000);
+    if (this._e2ePwAttempts.length >= 5) {
+      const oldest = this._e2ePwAttempts[0];
+      const waitSec = Math.ceil((60_000 - (now - oldest)) / 1000);
+      errorEl.textContent = `Too many attempts. Try again in ${waitSec}s.`;
+      errorEl.style.display = 'block';
+      submitBtn.disabled = true;
+    }
+
+    modal.style.display = 'flex';
+    setTimeout(() => input.focus(), 50);
+  }
+
+  /**
+   * Submit the E2E password prompt — verify against server, derive wrapping key, init E2E.
+   */
+  async _submitE2EPassword() {
+    const modal = document.getElementById('e2e-password-modal');
+    const input = document.getElementById('e2e-pw-input');
+    const errorEl = document.getElementById('e2e-pw-error');
+    const submitBtn = document.getElementById('e2e-pw-submit-btn');
+
+    const password = input.value;
+    if (!password) {
+      errorEl.textContent = 'Please enter your password.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    // Rate limit check
+    const now = Date.now();
+    this._e2ePwAttempts = (this._e2ePwAttempts || []).filter(t => now - t < 60_000);
+    if (this._e2ePwAttempts.length >= 5) {
+      const oldest = this._e2ePwAttempts[0];
+      const waitSec = Math.ceil((60_000 - (now - oldest)) / 1000);
+      errorEl.textContent = `Too many attempts. Try again in ${waitSec}s.`;
+      errorEl.style.display = 'block';
+      submitBtn.disabled = true;
+      return;
+    }
+
+    // Record attempt
+    this._e2ePwAttempts.push(now);
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Verifying…';
+    errorEl.style.display = 'none';
+
+    try {
+      // Verify password on server
+      const resp = await fetch('/api/auth/verify-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: this.user.username, password })
+      });
+      const data = await resp.json();
+
+      if (!data.valid) {
+        const remaining = 5 - this._e2ePwAttempts.length;
+        errorEl.textContent = `Incorrect password. ${remaining > 0 ? remaining + ' attempt' + (remaining !== 1 ? 's' : '') + ' remaining.' : 'Locked out for 60s.'}`;
+        errorEl.style.display = 'block';
+        submitBtn.disabled = remaining <= 0;
+        submitBtn.textContent = 'Unlock';
+        input.value = '';
+        input.focus();
+        return;
+      }
+
+      // Password correct — derive wrapping key and init E2E
+      submitBtn.textContent = 'Unlocking…';
+      const wrappingKey = await HavenE2E.deriveWrappingKey(password);
+      sessionStorage.setItem('haven_e2e_wrap', wrappingKey);
+      this._e2eWrappingKey = wrappingKey;
+
+      // Re-initialize E2E with the wrapping key
+      if (!this.e2e) this.e2e = new HavenE2E();
+      const ok = await this.e2e.init(this.socket, wrappingKey);
+
+      if (ok) {
+        // Set up E2E listeners (handles publish + conflict resolution)
+        await this._e2eSetupListeners();
+        this._closeE2EPasswordModal();
+        this._showToast('Encryption unlocked', 'success');
+
+        // Execute the pending action
+        if (this._e2ePwPendingAction) {
+          const action = this._e2ePwPendingAction;
+          this._e2ePwPendingAction = null;
+          action();
+        }
+      } else {
+        errorEl.textContent = 'Failed to initialize encryption. Please try again.';
+        errorEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Unlock';
+      }
+    } catch (err) {
+      console.error('[E2E] Password prompt error:', err);
+      errorEl.textContent = 'An error occurred. Please try again.';
+      errorEl.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Unlock';
+    }
+  }
+
+  /**
+   * Close the E2E password prompt modal.
+   */
+  _closeE2EPasswordModal() {
+    const modal = document.getElementById('e2e-password-modal');
+    modal.style.display = 'none';
+    document.getElementById('e2e-pw-input').value = '';
+    this._e2ePwPendingAction = null;
+  }
+
+  /**
+   * Get the E2E partner for the current DM channel.
    * Returns { userId, publicKeyJwk } or null.
    */
   _getE2EPartner() {
     if (!this.e2e || !this.e2e.ready) return null;
     const ch = this.channels.find(c => c.code === this.currentChannel);
     if (!ch || !ch.is_dm || !ch.dm_target) return null;
-    const partnerId = ch.dm_target.id;
-    const jwk = this._dmPublicKeys[partnerId];
-    return jwk ? { userId: partnerId, publicKeyJwk: jwk } : null;
+    const jwk = this._dmPublicKeys[ch.dm_target.id];
+    return jwk ? { userId: ch.dm_target.id, publicKeyJwk: jwk } : null;
   }
 
   /**
-   * Re-decrypt visible messages when a DM partner's public key arrives late.
-   * Called from the public-key-result handler to fix the key/messages race.
+   * Re-fetch messages when a partner's key arrives (fixes key/message race).
    */
   _retryDecryptForUser(userId) {
     const ch = this.channels.find(c => c.code === this.currentChannel);
-    if (!ch || !ch.is_dm || !ch.dm_target) return;
-    if (ch.dm_target.id !== userId) return;
-    // Re-fetch messages — key is now cached so _decryptMessages will succeed
+    if (!ch || !ch.is_dm || !ch.dm_target || ch.dm_target.id !== userId) return;
     this._oldestMsgId = null;
     this._noMoreHistory = false;
     this._loadingHistory = false;
@@ -11766,25 +12210,24 @@ class HavenApp {
   }
 
   /**
-   * Fetch the DM partner's public key when entering a DM channel.
-   * Always re-fetches from the server to detect key changes (e.g. partner
-   * cleared browser data or switched devices, causing key regeneration).
+   * Fetch the DM partner's public key (fire-and-forget, or awaitable via promise).
+   * Always re-fetches to detect key changes across devices.
    */
-  _fetchDMPartnerKey(channel) {
+  async _fetchDMPartnerKey(channel) {
     if (!this.e2e || !this.e2e.ready) return;
     if (!channel || !channel.is_dm || !channel.dm_target) return;
     const partnerId = channel.dm_target.id;
-    this.socket.emit('get-public-key', { userId: partnerId });
+    const jwk = await this.e2e.requestPartnerKey(this.socket, partnerId);
+    if (jwk) this._dmPublicKeys[partnerId] = jwk;
   }
 
   /**
    * Show E2E verification code modal for the current DM.
-   * Both users see the same code — they can compare out-of-band.
    */
   async _showE2EVerification() {
     const partner = this._getE2EPartner();
     if (!partner || !this.e2e?.ready) {
-      this._showToast('E2E not available for this conversation', 'error');
+      this._showToast('No partner key available — the other user may not have E2E set up yet', 'error');
       return;
     }
     try {
@@ -11792,7 +12235,6 @@ class HavenApp {
       const ch = this.channels.find(c => c.code === this.currentChannel);
       const partnerName = ch?.dm_target?.username || 'Partner';
 
-      // Create a simple modal overlay
       let overlay = document.getElementById('e2e-verify-overlay');
       if (!overlay) {
         overlay = document.createElement('div');
@@ -11816,7 +12258,6 @@ class HavenApp {
           </div>
         </div>
       `;
-      // Attach listeners via JS (inline onclick is blocked by CSP)
       overlay.querySelector('#e2e-copy-code-btn').addEventListener('click', () => {
         navigator.clipboard.writeText(code);
         overlay.querySelector('#e2e-copy-code-btn').textContent = 'Copied!';
@@ -11832,10 +12273,124 @@ class HavenApp {
   }
 
   /**
-   * Decrypt any E2E-encrypted messages in an array (mutates in place).
-   * For messages the current user sent, uses the partner's public key.
-   * For messages the partner sent, also uses the partner's public key.
-   * Both sides derive the same shared secret (ECDH is symmetric).
+   * Show a scary confirmation popup before resetting E2E encryption keys.
+   */
+  _showE2EResetConfirmation() {
+    // _requireE2E ensures E2E is ready before calling this
+
+    let overlay = document.getElementById('e2e-reset-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'e2e-reset-overlay';
+      overlay.className = 'modal-overlay';
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.style.display = 'none';
+      });
+    }
+    overlay.innerHTML = `
+      <div class="modal e2e-reset-modal">
+        <h3>⚠️ Reset Encryption Keys</h3>
+        <div class="e2e-reset-warning">
+          <strong>This action is irreversible.</strong> Resetting your encryption keys will:
+          <ul>
+            <li>Generate a completely new key pair</li>
+            <li>Make <strong>ALL</strong> previous encrypted DM messages <strong>permanently unreadable</strong> — for both you and the person you were talking to</li>
+            <li>Require your DM partners to re-verify encryption with you</li>
+          </ul>
+          <br>
+          <strong>This cannot be undone. There is no recovery. The messages are gone forever.</strong>
+        </div>
+        <div class="e2e-confirm-type">
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Type <strong>RESET</strong> to confirm:</p>
+          <input type="text" id="e2e-reset-confirm-input" placeholder="RESET" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="e2e-reset-actions">
+          <button class="btn-danger" id="e2e-reset-confirm-btn">Reset My Keys</button>
+          <button class="btn-sm" id="e2e-reset-cancel-btn">Cancel</button>
+        </div>
+      </div>
+    `;
+
+    const confirmInput = overlay.querySelector('#e2e-reset-confirm-input');
+    const confirmBtn = overlay.querySelector('#e2e-reset-confirm-btn');
+
+    confirmInput.addEventListener('input', () => {
+      if (confirmInput.value.trim().toUpperCase() === 'RESET') {
+        confirmBtn.classList.add('enabled');
+      } else {
+        confirmBtn.classList.remove('enabled');
+      }
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+      if (confirmInput.value.trim().toUpperCase() !== 'RESET') return;
+      overlay.style.display = 'none';
+      await this._performE2EKeyReset();
+    });
+
+    overlay.querySelector('#e2e-reset-cancel-btn').addEventListener('click', () => {
+      overlay.style.display = 'none';
+    });
+
+    overlay.style.display = 'flex';
+    setTimeout(() => confirmInput.focus(), 50);
+  }
+
+  /**
+   * Actually reset E2E keys, re-publish, and post a notice in chat.
+   */
+  async _performE2EKeyReset() {
+    if (!this.e2e) return;
+
+    // We need the wrapping key from memory, sessionStorage, or password prompt.
+    let wrappingKey = this._e2eWrappingKey || sessionStorage.getItem('haven_e2e_wrap') || null;
+    if (!wrappingKey) {
+      // Wrapping key was cleared after init — prompt for password directly,
+      // then retry the reset (no need to show RESET confirmation again).
+      this._e2ePwPendingAction = () => this._performE2EKeyReset();
+      this._showE2EPasswordModal();
+      return;
+    }
+
+    try {
+      const ok = await this.e2e.resetKeys(this.socket, wrappingKey);
+      if (!ok) {
+        this._showToast('Key reset failed', 'error');
+        return;
+      }
+      // Re-publish the new public key (force overwrite)
+      await this.e2e.publishKey(this.socket, true);
+      // Clear all cached partner shared keys
+      this._dmPublicKeys = {};
+
+      // Post a timestamped notice in the current chat
+      this._appendE2ENotice(`🔄 Encryption keys were reset — ${new Date().toLocaleString()}. Previous encrypted messages in this conversation can no longer be decrypted.`);
+
+      this._showToast('Encryption keys reset successfully', 'success');
+      console.log('[E2E] Keys reset by user');
+    } catch (err) {
+      console.error('[E2E] Key reset error:', err);
+      this._showToast('Key reset failed: ' + err.message, 'error');
+    }
+  }
+
+  /**
+   * Append a styled E2E system notice to the chat.
+   */
+  _appendE2ENotice(text) {
+    const container = document.getElementById('messages');
+    const wasAtBottom = this._isScrolledToBottom();
+    const el = document.createElement('div');
+    el.className = 'system-message e2e-notice';
+    el.textContent = text;
+    container.appendChild(el);
+    if (wasAtBottom) this._scrollToBottom();
+  }
+
+  /**
+   * Decrypt E2E-encrypted messages in place.
+   * Both sides derive the same ECDH shared secret.
    */
   async _decryptMessages(messages) {
     if (!this.e2e || !this.e2e.ready || !messages || !messages.length) return;
@@ -11848,17 +12403,16 @@ class HavenApp {
     for (const msg of messages) {
       if (HavenE2E.isEncrypted(msg.content)) {
         if (!partnerJwk) {
-          // Key not yet available — show placeholder (will retry when key arrives)
-          msg.content = '[Encrypted message — waiting for key...]';
+          msg.content = '[Encrypted — waiting for key...]';
           msg._e2e = true;
           continue;
         }
         const plain = await this.e2e.decrypt(msg.content, partnerId, partnerJwk);
         if (plain !== null) {
           msg.content = plain;
-          msg._e2e = true; // flag for UI indicator
+          msg._e2e = true;
         } else {
-          msg.content = '[Encrypted message — unable to decrypt]';
+          msg.content = '[Encrypted — unable to decrypt]';
           msg._e2e = true;
         }
       }

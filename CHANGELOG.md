@@ -11,6 +11,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Haven uses [Sema
 
 ---
 
+## [2.1.0] — 2026-02-19
+
+### Fixed
+- **E2E encryption — multi-device key sync** — encrypted DM keys now stay in sync across multiple browsers and devices. Previously, logging in on a second device could cause key conflicts and break encryption for both sessions.
+- **E2E encryption — infinite sync loop** — resolved a condition where two devices could repeatedly overwrite each other's keys, causing an endless conflict cycle.
+- **Channel organizer — category/tag sorting** — the Up/Down buttons for reordering category headers (tag sections) in the Organize modal now work correctly. Previously, the buttons were disabled even when Manual Order was selected.
+- **Channel organizer — channel sorting within groups** — moving channels up/down now correctly swaps within the visible tag group instead of the flat channel list.
+- **Settings crash** — fixed a `TypeError` in server settings that could cause intermittent UI issues.
+
+### Changed
+- **E2E architecture improvements** — smarter key backup strategy prevents accidental overwrites when multiple devices are active. Cross-device sync notifications ensure all sessions stay current.
+- **Cache-busting** — client JS files now use version-based cache keys to prevent stale code after updates.
+
+---
+
 ## [2.0.1] — 2026-02-19
 
 ### Fixed
