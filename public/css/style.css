@@ -5431,6 +5431,19 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 
 .msg-toolbar button:hover { background: var(--bg-tertiary); }
 
+/* First message: flip toolbar below so it's not clipped by the scroll
+   container's top edge (hidden behind the channel-topic bar). */
+.messages > :first-child .msg-toolbar {
+  top: auto;
+  bottom: -6px;
+}
+.messages > :first-child .reaction-full-picker {
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 4px;
+}
+
 
 /* ═══════════════════════════════════════════════════════════
    REPLY BANNER (on messages + input area)
