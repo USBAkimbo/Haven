@@ -7160,7 +7160,15 @@ class HavenApp {
 
         grid.appendChild(tile);
       }
+
+      // Show the container BEFORE assigning srcObject — browsers won't decode
+      // video frames inside a display:none container, causing a black rectangle
+      // that only fixes itself on layout reflow (e.g. resizing the slider).
+      container.style.display = 'flex';
+
       const videoEl = tile.querySelector('video');
+      // Force a layout reflow so the video element has real dimensions
+      void videoEl.offsetHeight;
       // Force re-render if the same stream is re-assigned (otherwise it's a no-op → black screen)
       if (videoEl.srcObject === stream) {
         videoEl.srcObject = null;
@@ -7188,8 +7196,6 @@ class HavenApp {
         }
       };
       setTimeout(_retryPlay, 600);
-      // Auto-show container (even if minimized) when new stream arrives
-      container.style.display = 'flex';
       this._screenShareMinimized = false;
       this._removeScreenShareIndicator();
       // Apply saved stream size so it doesn't start at default/cut-off height
@@ -11624,7 +11630,11 @@ class HavenApp {
   _renderRoleDetail() {
     const panel = document.getElementById('role-detail-panel');
     const role = this._allRoles.find(r => r.id === this._selectedRoleId);
-    if (!role) { panel.innerHTML = '<p class="muted-text" style="padding:20px;text-align:center">Select a role</p>'; return; }
+    if (!role) {
+      panel.innerHTML = '<p class="muted-text" style="padding:20px;text-align:center">Select a role</p>';
+      const sb = document.getElementById('save-role-btn'); if (sb) sb.style.display = 'none';
+      return;
+    }
 
     const allPerms = [
       'edit_own_messages', 'delete_own_messages', 'delete_message', 'delete_lower_messages',
@@ -11667,17 +11677,22 @@ class HavenApp {
           </label>
         `).join('')}
         <div style="margin-top:12px;display:flex;gap:8px">
-          <button class="btn-sm btn-accent" id="save-role-btn">Save</button>
           <button class="btn-sm danger" id="delete-role-btn">Delete</button>
         </div>
       </div>
     `;
 
-    document.getElementById('save-role-btn').addEventListener('click', () => {
+    // The Save button lives in the modal-actions bar (always visible). Show it
+    // when a role is selected, and wire up the click handler.
+    const saveBtn = document.getElementById('save-role-btn');
+    saveBtn.style.display = '';
+    // Remove old listener by cloning
+    const freshSaveBtn = saveBtn.cloneNode(true);
+    saveBtn.parentNode.replaceChild(freshSaveBtn, saveBtn);
+    freshSaveBtn.addEventListener('click', () => {
       const perms = [...panel.querySelectorAll('.role-perm-checkbox:checked')].map(cb => cb.dataset.perm);
-      const saveBtn = document.getElementById('save-role-btn');
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving...';
+      freshSaveBtn.disabled = true;
+      freshSaveBtn.textContent = 'Saving...';
       this.socket.emit('update-role', {
         roleId: role.id,
         name: document.getElementById('role-edit-name').value.trim(),
@@ -11686,7 +11701,7 @@ class HavenApp {
         autoAssign: document.getElementById('role-edit-auto-assign').checked,
         permissions: perms
       }, (res) => {
-        if (res.error) { this._showToast(res.error, 'error'); saveBtn.disabled = false; saveBtn.textContent = 'Save'; return; }
+        if (res.error) { this._showToast(res.error, 'error'); freshSaveBtn.disabled = false; freshSaveBtn.textContent = 'Save'; return; }
         // Use server-returned roles directly (no re-fetch needed)
         if (res.roles) {
           this._allRoles = res.roles;
@@ -11698,10 +11713,9 @@ class HavenApp {
         } else {
           this._loadRoles();
         }
-        // Flash the save button green briefly as confirmation
-        saveBtn.textContent = '✓ Saved';
-        saveBtn.classList.add('btn-saved');
-        setTimeout(() => { saveBtn.textContent = 'Save'; saveBtn.classList.remove('btn-saved'); saveBtn.disabled = false; }, 1200);
+        this._showToast('Role saved', 'success');
+        freshSaveBtn.disabled = false;
+        freshSaveBtn.textContent = 'Save';
       });
     });
 

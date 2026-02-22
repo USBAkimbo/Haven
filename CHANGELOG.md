@@ -11,6 +11,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Haven uses [Sema
 
 ---
 
+## [2.2.3] — 2026-02-21
+
+### Fixed
+- **Screen share black screen on own view** — video elements were assigned their source while the container was still hidden (`display: none`), causing browsers to skip frame decoding. The container is now shown before setting `srcObject`, with a forced layout reflow so the first frame renders immediately.
+- **Role save button buried in scroll** — the Save button was inside the scrollable permissions list, making it easy to miss. Moved it to the always-visible modal footer next to the Close button.
+- **Role save confirmation too subtle** — replaced the brief in-button text flash with a proper green toast notification ("Role saved") that appears at the top of the screen.
+- **Screen share quality controls (mid-stream)** — resolution and framerate changes now apply instantly to an active share via `applyConstraints()` and bitrate re-capping, without needing to stop and restart.
+- **Screen share black screen on re-share** — `stopScreenShare` now fully awaits renegotiation before allowing a new share, and the `onunmute` handler no longer references a stale stream closure.
+- **Auto-assign default role not persisting** — the auto-assign flag update is now wrapped in a database transaction, and the server returns fresh role data directly in the callback to avoid race conditions.
+
+### Changed
+- Website & docs updated to v2.2.3.
+
+---
+
 ## [2.2.2] — 2026-02-21
 
 ### Added

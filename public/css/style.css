@@ -2883,7 +2883,6 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 .btn-sm:hover { background: var(--bg-hover); color: var(--text-primary); }
 .btn-sm.btn-accent { background: var(--accent); color: white; font-size: 16px; padding: 7px 10px; line-height: 1; }
 .btn-sm.btn-accent:hover { background: var(--accent-hover); }
-.btn-sm.btn-saved { background: #27ae60 !important; color: white !important; pointer-events: none; }
 .btn-sm.btn-danger { background: var(--danger, #e74c3c); color: white; font-size: 16px; padding: 7px 10px; line-height: 1; }
 .btn-sm.btn-danger:hover { filter: brightness(1.15); }
 
