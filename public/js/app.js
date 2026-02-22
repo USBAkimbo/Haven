@@ -1507,6 +1507,33 @@ class HavenApp {
       applySize();
       streamSizeSlider.addEventListener('input', applySize);
     }
+
+    // ── Stream layout picker ──
+    const layoutBtn = document.getElementById('stream-layout-btn');
+    const layoutMenu = document.getElementById('stream-layout-menu');
+    if (layoutBtn && layoutMenu) {
+      const savedLayout = localStorage.getItem('haven_stream_layout') || 'auto';
+      this._applyStreamLayout(savedLayout);
+      layoutMenu.querySelector(`[data-layout="${savedLayout}"]`)?.classList.add('active');
+
+      layoutBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        layoutMenu.classList.toggle('open');
+      });
+      layoutMenu.querySelectorAll('.stream-layout-opt').forEach(opt => {
+        opt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const mode = opt.dataset.layout;
+          layoutMenu.querySelectorAll('.stream-layout-opt').forEach(o => o.classList.remove('active'));
+          opt.classList.add('active');
+          this._applyStreamLayout(mode);
+          localStorage.setItem('haven_stream_layout', mode);
+          layoutMenu.classList.remove('open');
+        });
+      });
+      document.addEventListener('click', () => layoutMenu.classList.remove('open'));
+    }
+
     document.getElementById('voice-ns-slider').addEventListener('input', (e) => {
       if (this.voice && this.voice.inVoice) {
         this.voice.setNoiseSensitivity(parseInt(e.target.value, 10));
@@ -2557,6 +2584,31 @@ class HavenApp {
       }
     }, { passive: true });
 
+    // ── Mobile server dropdown ──
+    const mobileServerBtn = document.getElementById('mobile-server-btn');
+    const mobileServerMenu = document.getElementById('mobile-server-menu');
+    if (mobileServerBtn && mobileServerMenu) {
+      mobileServerBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._renderMobileServerList();
+        mobileServerMenu.classList.toggle('open');
+      });
+      document.addEventListener('click', () => mobileServerMenu.classList.remove('open'));
+      mobileServerMenu.addEventListener('click', (e) => e.stopPropagation());
+      document.getElementById('mobile-server-add-btn')?.addEventListener('click', () => {
+        mobileServerMenu.classList.remove('open');
+        this._editingServerUrl = null;
+        document.getElementById('add-server-modal-title').textContent = 'Add a Server';
+        document.getElementById('add-server-modal').style.display = 'flex';
+        document.getElementById('add-server-name-input').value = '';
+        document.getElementById('server-url-input').value = '';
+        document.getElementById('server-url-input').disabled = false;
+        document.getElementById('add-server-icon-input').value = '';
+        document.getElementById('save-server-btn').textContent = 'Add Server';
+        document.getElementById('add-server-name-input').focus();
+      });
+    }
+
     // ── Long-press to show message toolbar on mobile ──
     const isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
     if (isTouchDevice) {
@@ -2625,6 +2677,31 @@ class HavenApp {
     const overlay = document.getElementById('mobile-overlay');
     appBody.classList.remove('mobile-sidebar-open', 'mobile-right-open');
     overlay.classList.remove('active');
+  }
+
+  _renderMobileServerList() {
+    const list = document.getElementById('mobile-server-list');
+    if (!list || !this.serverManager) return;
+    const servers = this.serverManager.getAll();
+    if (servers.length === 0) {
+      list.innerHTML = '<div style="padding:8px 10px;color:var(--text-muted);font-size:12px;">No servers added yet</div>';
+      return;
+    }
+    list.innerHTML = servers.map(s => {
+      const initial = s.name.charAt(0).toUpperCase();
+      const online = s.status.online;
+      const dotClass = online === true ? 'online' : online === false ? 'offline' : 'unknown';
+      const iconUrl = s.icon || (s.status.icon || null);
+      const iconHtml = iconUrl
+        ? `<img src="${this._escapeHtml(iconUrl)}" class="msrv-icon" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display=''">`
+        + `<span class="msrv-initial" style="display:none">${initial}</span>`
+        : `<span class="msrv-initial">${initial}</span>`;
+      return `<a class="mobile-server-item" href="${this._escapeHtml(s.url)}" target="_blank" rel="noopener">
+        <span class="msrv-dot ${dotClass}"></span>
+        ${iconHtml}
+        <span>${this._escapeHtml(s.name)}</span>
+      </a>`;
+    }).join('');
   }
 
   /* ── iOS PWA Keyboard Layout Fix ────────────────────── */
@@ -7239,6 +7316,16 @@ class HavenApp {
       this._updateHiddenStreamsBar();
       this._updateScreenShareVisibility();
     }
+  }
+
+  _applyStreamLayout(mode) {
+    const grid = document.getElementById('screen-share-grid');
+    if (!grid) return;
+    grid.classList.remove('layout-vertical', 'layout-side-by-side', 'layout-grid-2x2');
+    if (mode === 'vertical') grid.classList.add('layout-vertical');
+    else if (mode === 'side-by-side') grid.classList.add('layout-side-by-side');
+    else if (mode === 'grid-2x2') grid.classList.add('layout-grid-2x2');
+    // 'auto' = no extra class, default CSS applies
   }
 
   _updateScreenShareVisibility() {

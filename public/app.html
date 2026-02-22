@@ -223,6 +223,14 @@
               <line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
           </button>
+          <div class="mobile-server-dropdown" id="mobile-server-dropdown">
+            <button class="mobile-server-btn" id="mobile-server-btn" title="Servers" aria-label="Servers">⬡</button>
+            <div class="mobile-server-menu" id="mobile-server-menu">
+              <div class="mobile-server-menu-header">Servers</div>
+              <div id="mobile-server-list"></div>
+              <button class="mobile-server-add" id="mobile-server-add-btn">+ Add Server</button>
+            </div>
+          </div>
           <div class="channel-info">
             <h3 id="channel-header-name">Select a channel</h3>
           </div>
@@ -290,6 +298,15 @@
             <div class="screen-share-header">
               <span id="screen-share-label">🖥️ Streams</span>
               <div class="screen-share-header-controls">
+                <div class="stream-layout-picker" id="stream-layout-picker" title="Stream layout">
+                  <button class="stream-layout-btn" id="stream-layout-btn" title="Change layout">⊞</button>
+                  <div class="stream-layout-menu" id="stream-layout-menu">
+                    <button class="stream-layout-opt active" data-layout="auto" title="Auto grid">⊞ Auto</button>
+                    <button class="stream-layout-opt" data-layout="vertical" title="Vertical stack">▬ Stack</button>
+                    <button class="stream-layout-opt" data-layout="side-by-side" title="Side by side">◫ Side</button>
+                    <button class="stream-layout-opt" data-layout="grid-2x2" title="2×2 Grid">⊟ 2×2</button>
+                  </div>
+                </div>
                 <label class="stream-size-label" title="Stream display size">
                   🖥️
                   <input type="range" id="stream-size-slider" class="stream-size-slider" min="20" max="90" value="50">
