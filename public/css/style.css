@@ -9161,6 +9161,34 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   width: auto;
   min-width: 60px;
 }
+.voice-settings-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+.voice-settings-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.voice-settings-select {
+  flex: 1;
+  min-width: 70px;
+  padding: 2px 6px;
+  font-size: 11px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+}
+.voice-settings-select:focus {
+  border-color: var(--accent);
+}
 
 /* ═══════════════════════════════════════════════════════════
    PERSISTENT VOICE BAR (sidebar bottom)

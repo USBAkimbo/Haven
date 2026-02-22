@@ -3777,6 +3777,7 @@ function setupSocketHandlers(io, db) {
 
       // Refresh all online users' role data
       for (const [code] of channelUsers) { emitOnlineUsers(code); }
+      io.emit('roles-updated');
       cb({ success: true });
     });
 

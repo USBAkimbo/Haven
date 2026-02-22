@@ -411,6 +411,25 @@
             <label class="voice-settings-label">🤫 Noise Suppression</label>
             <input type="range" id="voice-ns-slider" class="ns-slider" min="0" max="100" value="10" title="Noise gate: 0 = off, 100 = aggressive">
           </div>
+          <div class="voice-settings-divider"></div>
+          <div class="voice-settings-section-label">🖥️ Screen Share Quality</div>
+          <div class="voice-settings-row">
+            <label class="voice-settings-label">Resolution</label>
+            <select id="screen-res-select" class="voice-settings-select">
+              <option value="source">Source</option>
+              <option value="720">720p</option>
+              <option value="1080" selected>1080p</option>
+              <option value="1440">1440p</option>
+            </select>
+          </div>
+          <div class="voice-settings-row">
+            <label class="voice-settings-label">Frame Rate</label>
+            <select id="screen-fps-select" class="voice-settings-select">
+              <option value="15">15 fps</option>
+              <option value="30" selected>30 fps</option>
+              <option value="60">60 fps</option>
+            </select>
+          </div>
         </div>
         <!-- Voice controls bar (pinned above settings) -->
         <div id="voice-panel" class="voice-panel" style="display:none">

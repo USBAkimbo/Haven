@@ -34,6 +34,19 @@ class VoiceManager {
     this._noiseGateGain = null;
     this._noiseGateAnalyser = null;
 
+    // Screen share quality settings (populated from localStorage)
+    const savedRes = localStorage.getItem('haven_screen_res');
+    this.screenResolution = savedRes !== null ? parseInt(savedRes, 10) : 1080;  // 0 = source
+    this.screenFrameRate = parseInt(localStorage.getItem('haven_screen_fps') || '30', 10) || 30;
+
+    // Bitrate map: resolution → bits/sec  (sensible defaults per resolution)
+    this._screenBitrates = {
+      0:    4_000_000,   // 4 Mbps fallback for unconstrained (source)
+      720:  1_500_000,   // 1.5 Mbps
+      1080: 3_000_000,   // 3 Mbps
+      1440: 5_000_000,   // 5 Mbps
+    };
+
     this.rtcConfig = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -200,6 +213,10 @@ class VoiceManager {
         this.screenStream.getTracks().forEach(track => {
           conn.addTrack(track, this.screenStream);
         });
+        // Cap bitrate for this peer
+        const res = this.screenResolution;
+        const maxBitrate = this._screenBitrates[res] || this._screenBitrates[0];
+        this._applyScreenBitrate(conn, maxBitrate);
       }
 
       // Renegotiate to include the video tracks
@@ -356,8 +373,21 @@ class VoiceManager {
   async shareScreen() {
     if (!this.inVoice || this.isScreenSharing) return false;
     try {
+      // Build video constraints from quality settings
+      const videoConstraints = { cursor: 'always' };
+      const res = this.screenResolution;   // 720 | 1080 | 1440 | 0 (source)
+      const fps = this.screenFrameRate;    // 15 | 30 | 60
+
+      if (res && res !== 0) {
+        // 16:9 width from height
+        const widths = { 720: 1280, 1080: 1920, 1440: 2560 };
+        videoConstraints.width  = { ideal: widths[res] || 1920 };
+        videoConstraints.height = { ideal: res };
+      }
+      videoConstraints.frameRate = { ideal: fps };
+
       const displayMediaOptions = {
-        video: { cursor: 'always' },
+        video: videoConstraints,
         audio: true,
         surfaceSwitching: 'exclude',
         selfBrowserSurface: 'include',
@@ -379,11 +409,14 @@ class VoiceManager {
         this.stopScreenShare();
       };
 
-      // Add screen tracks to all existing peer connections
+      // Add screen tracks to all existing peer connections and cap bitrate
+      const maxBitrate = this._screenBitrates[res] || this._screenBitrates[0];
       for (const [userId, peer] of this.peers) {
         this.screenStream.getTracks().forEach(track => {
           peer.connection.addTrack(track, this.screenStream);
         });
+        // Cap the video bitrate so WebRTC doesn't starve framerate
+        this._applyScreenBitrate(peer.connection, maxBitrate);
         // Renegotiate with each peer
         await this._renegotiate(userId, peer.connection);
       }
@@ -434,6 +467,39 @@ class VoiceManager {
     if (this.onScreenStream) this.onScreenStream(this.localUserId, null);
   }
 
+  // ── Screen Share Quality Helpers ───────────────────────
+
+  setScreenResolution(h) {
+    this.screenResolution = h;   // 720 | 1080 | 1440 | 0 = source
+    localStorage.setItem('haven_screen_res', h);
+  }
+
+  setScreenFrameRate(fps) {
+    this.screenFrameRate = fps;  // 15 | 30 | 60
+    localStorage.setItem('haven_screen_fps', fps);
+  }
+
+  /**
+   * Cap the video bitrate on screen-share senders for a given peer connection.
+   * Uses RTCRtpSender.setParameters() which is widely supported.
+   */
+  _applyScreenBitrate(connection, maxBitrate) {
+    try {
+      const senders = connection.getSenders();
+      for (const sender of senders) {
+        if (sender.track && sender.track.kind === 'video' &&
+            this.screenStream && this.screenStream.getVideoTracks().includes(sender.track)) {
+          const params = sender.getParameters();
+          if (!params.encodings || params.encodings.length === 0) {
+            params.encodings = [{}];
+          }
+          params.encodings[0].maxBitrate = maxBitrate;
+          sender.setParameters(params).catch(() => {});
+        }
+      }
+    } catch (e) { /* setParameters not supported — adaptive bitrate remains */ }
+  }
+
   async _renegotiate(userId, connection) {
     try {
       const offer = await connection.createOffer();
@@ -465,6 +531,10 @@ class VoiceManager {
       this.screenStream.getTracks().forEach(track => {
         connection.addTrack(track, this.screenStream);
       });
+      // Cap bitrate for this new peer
+      const res = this.screenResolution;
+      const maxBitrate = this._screenBitrates[res] || this._screenBitrates[0];
+      this._applyScreenBitrate(connection, maxBitrate);
     }
 
     // Handle incoming remote tracks — route audio and video separately

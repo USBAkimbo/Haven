@@ -1513,6 +1513,26 @@ class HavenApp {
       }
     });
 
+    // ── Screen share quality dropdowns ──
+    const screenResSelect = document.getElementById('screen-res-select');
+    const screenFpsSelect = document.getElementById('screen-fps-select');
+    if (screenResSelect) {
+      // Restore saved value (0 = "source")
+      const savedRes = localStorage.getItem('haven_screen_res') || '1080';
+      screenResSelect.value = savedRes === '0' ? 'source' : savedRes;
+      screenResSelect.addEventListener('change', (e) => {
+        const val = e.target.value === 'source' ? 0 : parseInt(e.target.value, 10);
+        this.voice.setScreenResolution(val);
+      });
+    }
+    if (screenFpsSelect) {
+      const savedFps = localStorage.getItem('haven_screen_fps') || '30';
+      screenFpsSelect.value = savedFps;
+      screenFpsSelect.addEventListener('change', (e) => {
+        this.voice.setScreenFrameRate(parseInt(e.target.value, 10));
+      });
+    }
+
     // Wire up the voice manager's video callback
     this.voice.onScreenStream = (userId, stream) => this._handleScreenStream(userId, stream);
     // Wire up screen share audio callback
@@ -11556,6 +11576,7 @@ class HavenApp {
       this._renderRolesPreview();
       if (document.getElementById('role-modal').style.display !== 'none') {
         this._renderRoleSidebar();
+        this._renderRoleDetail();   // refresh detail panel so checkboxes reflect server state
       }
       if (typeof cb === 'function') cb();
     });
