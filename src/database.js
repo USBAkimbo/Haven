@@ -533,6 +533,13 @@ function initDatabase() {
     db.exec("ALTER TABLE messages ADD COLUMN is_archived INTEGER DEFAULT 0");
   }
 
+  // ── Migration: password_version for session invalidation ──
+  try {
+    db.prepare("SELECT password_version FROM users LIMIT 0").get();
+  } catch {
+    db.exec("ALTER TABLE users ADD COLUMN password_version INTEGER DEFAULT 1");
+  }
+
   // ── Migration: role-based channel access ────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS role_channel_access (

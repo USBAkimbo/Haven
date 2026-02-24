@@ -5,7 +5,7 @@
 
 > **Your server. Your rules. No cloud. No accounts with Big Tech. No one reading your messages.**
 
-![Version](https://img.shields.io/badge/version-2.2.5-blue)
+![Version](https://img.shields.io/badge/version-2.3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT--NC-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
@@ -13,6 +13,26 @@
 Haven is a self-hosted Discord alternative. Run it on your machine. Invite friends with a code. No cloud. No email signup. No tracking. Free forever.
 
 <img width="1917" height="948" alt="Screenshot 2026-02-14 102013" src="https://github.com/user-attachments/assets/0c85ca6c-f811-43db-a26b-9b66c418830e" />
+
+---
+
+## 🖥️ NEW — Haven Desktop (Beta)
+
+> **Want a native desktop experience?** Haven Desktop is a standalone app that connects to any Haven server — with features that go beyond the browser.
+
+**[Haven Desktop](https://github.com/ancsemi/Haven-Desktop)** is now available as a public beta. Download the installer and connect to your server in seconds.
+
+- **Per-Application Audio** — share audio from a single app during screen share, just like Discord. Powered by native WASAPI (Windows) and PulseAudio (Linux) hooks.
+- **Audio Device Switching** — change your mic and speaker mid-call without leaving voice chat
+- **Native Desktop Notifications** — OS-level notifications via the system tray
+- **Minimize to Tray** — keeps running quietly in the background
+- **One-Click Install** — NSIS installer (Windows), AppImage / .deb (Linux). Download, run, done.
+
+> **⚠️ This is a beta release.** Bugs are expected. Your feedback is what makes it better — please [open an issue](https://github.com/ancsemi/Haven-Desktop/issues) if something breaks or feels off.
+>
+> **You still need a Haven server.** The desktop app is a client — it connects to a Haven server. Download and run [Haven](https://github.com/ancsemi/Haven) first if you haven't already.
+
+📥 **[Download Haven Desktop →](https://github.com/ancsemi/Haven-Desktop/releases/latest)**
 
 ---
 
@@ -369,6 +389,7 @@ Planned features — roughly in priority order:
 | **Session invalidation on password change** | 📋 Planned | All active sessions are forcibly logged out when a user changes their password |
 | **Recovery-key password reset** | 📋 Planned | Generate a 24-word recovery phrase from settings — used to reset your password without losing E2E DM history. Existing users get a one-time prompt to generate theirs. No admin involvement, no email required. |
 | **Android App** | 🚧 In Progress! | https://github.com/ancsemi/Haven-App |
+| **Desktop App** | ✅ Beta! | https://github.com/ancsemi/Haven-Desktop |
 
 > Want something else? Open an issue — PRs are always welcome.
 

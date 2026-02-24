@@ -8,7 +8,9 @@ class VoiceManager {
     this.localStream = null;        // Processed stream (sent to peers)
     this.rawStream = null;          // Raw mic stream (for local talk detection)
     this.screenStream = null;       // Screen share MediaStream
+    this.webcamStream = null;       // Webcam video MediaStream
     this.isScreenSharing = false;
+    this.isWebcamActive = false;
     this.peers = new Map();         // userId → { connection, stream, username }
     this.currentChannel = null;
     this.isMuted = false;
@@ -20,10 +22,12 @@ class VoiceManager {
     this.gainNodes = new Map();     // userId → GainNode
     this.localUserId = null;        // set by app.js so stopScreenShare can reference own tile
     this.onScreenStream = null;     // callback(userId, stream|null) — set by app.js
+    this.onWebcamStream = null;     // callback(userId, stream|null) — set by app.js
     this.onVoiceJoin = null;        // callback(userId, username)
     this.onVoiceLeave = null;       // callback(userId, username)
     this.onTalkingChange = null;    // callback(userId, isTalking)
     this.screenSharers = new Set();  // userIds currently sharing
+    this.webcamUsers = new Set();    // userIds currently broadcasting webcam
     this.screenGainNodes = new Map(); // userId → GainNode for screen share audio
     this.onScreenAudio = null;       // callback(userId) — screen share audio available
     this.talkingState = new Map();  // userId → boolean
@@ -172,6 +176,11 @@ class VoiceManager {
         this.screenSharers.delete(data.user.id);
         if (this.onScreenStream) this.onScreenStream(data.user.id, null);
       }
+      // If they had their webcam on, clean up
+      if (this.webcamUsers.has(data.user.id)) {
+        this.webcamUsers.delete(data.user.id);
+        if (this.onWebcamStream) this.onWebcamStream(data.user.id, null);
+      }
     });
 
     // Someone started screen sharing
@@ -193,10 +202,28 @@ class VoiceManager {
       if (this.onScreenStream) this.onScreenStream(data.userId, null);
     });
 
+    // Someone started their webcam
+    this.socket.on('webcam-started', (data) => {
+      this.webcamUsers.add(data.userId);
+    });
+
+    // Someone stopped their webcam
+    this.socket.on('webcam-stopped', (data) => {
+      this.webcamUsers.delete(data.userId);
+      if (this.onWebcamStream) this.onWebcamStream(data.userId, null);
+    });
+
     // Late joiner: server tells us about active screen sharers
     this.socket.on('active-screen-sharers', (data) => {
       if (data && data.sharers) {
         data.sharers.forEach(s => this.screenSharers.add(s.id));
+      }
+    });
+
+    // Late joiner: server tells us about active webcam users
+    this.socket.on('active-webcam-users', (data) => {
+      if (data && data.users) {
+        data.users.forEach(u => this.webcamUsers.add(u.id));
       }
     });
 
@@ -221,6 +248,24 @@ class VoiceManager {
       }
 
       // Renegotiate to include the video tracks
+      await this._renegotiate(data.targetUserId, conn);
+    });
+
+    // Server asks us to renegotiate our webcam with a late joiner
+    this.socket.on('renegotiate-webcam', async (data) => {
+      if (!this.webcamStream || !this.isWebcamActive) return;
+      const peer = this.peers.get(data.targetUserId);
+      if (!peer) return;
+      const conn = peer.connection;
+
+      // Add webcam track if not already on this peer
+      const senders = conn.getSenders();
+      const webcamTrack = this.webcamStream.getVideoTracks()[0];
+      const alreadySent = webcamTrack && senders.some(s => s.track === webcamTrack);
+      if (!alreadySent && webcamTrack) {
+        conn.addTrack(webcamTrack, this.webcamStream);
+      }
+
       await this._renegotiate(data.targetUserId, conn);
     });
   }
@@ -299,6 +344,10 @@ class VoiceManager {
     if (this.isScreenSharing) {
       this.stopScreenShare();
     }
+    // Stop webcam if active
+    if (this.isWebcamActive) {
+      this.stopWebcam();
+    }
 
     // Stop noise gate and talk detection
     this._stopNoiseGate();
@@ -345,6 +394,15 @@ class VoiceManager {
     this.isDeafened = false;
     this.screenSharers.clear();
     this.screenGainNodes.clear();
+    this.webcamUsers.clear();
+
+    // Close AudioContext to free resources
+    if (this.audioCtx) {
+      this.audioCtx.close().catch(() => {});
+      this.audioCtx = null;
+    }
+    // Clear cached silent track
+    this._cachedSilentTrack = null;
     
     // Clear persisted voice channel
     try { localStorage.removeItem('haven_voice_channel'); } catch {}
@@ -509,6 +567,125 @@ class VoiceManager {
     if (this.onScreenStream) this.onScreenStream(this.localUserId, null);
   }
 
+  // ── Webcam Video ────────────────────────────────────────
+
+  async startWebcam() {
+    if (!this.inVoice || this.isWebcamActive) return false;
+    try {
+      const savedCamId = localStorage.getItem('haven_cam_device') || '';
+      const videoConstraints = {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 30 }
+      };
+      if (savedCamId) videoConstraints.deviceId = { exact: savedCamId };
+
+      this.webcamStream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: false  // mic already captured separately
+      });
+
+      this.isWebcamActive = true;
+
+      // When user revokes camera permission
+      this.webcamStream.getVideoTracks()[0].onended = () => {
+        this.stopWebcam();
+      };
+
+      // Add webcam video track to all existing peer connections
+      const camTrack = this.webcamStream.getVideoTracks()[0];
+      for (const [userId, peer] of this.peers) {
+        peer.connection.addTrack(camTrack, this.webcamStream);
+        await this._renegotiate(userId, peer.connection);
+      }
+
+      // Tell the server
+      this.socket.emit('webcam-started', { code: this.currentChannel });
+      return true;
+    } catch (err) {
+      console.error('Webcam access failed:', err);
+      this.isWebcamActive = false;
+      this.webcamStream = null;
+      return false;
+    }
+  }
+
+  async stopWebcam() {
+    if (!this.isWebcamActive || !this.webcamStream) return;
+
+    const tracks = this.webcamStream.getTracks();
+
+    // Remove webcam track from all peer connections
+    const renegotiations = [];
+    for (const [userId, peer] of this.peers) {
+      const senders = peer.connection.getSenders();
+      tracks.forEach(track => {
+        const sender = senders.find(s => s.track === track);
+        if (sender) {
+          try { peer.connection.removeTrack(sender); } catch {}
+        }
+      });
+      renegotiations.push(this._renegotiate(userId, peer.connection).catch(() => {}));
+    }
+
+    try {
+      await Promise.race([
+        Promise.all(renegotiations),
+        new Promise(resolve => setTimeout(resolve, 3000))
+      ]);
+    } catch {}
+
+    tracks.forEach(t => t.stop());
+
+    this.webcamStream = null;
+    this.isWebcamActive = false;
+
+    this.socket.emit('webcam-stopped', { code: this.currentChannel });
+    if (this.onWebcamStream) this.onWebcamStream(this.localUserId, null);
+  }
+
+  async switchCamera(deviceId) {
+    if (!this.isWebcamActive) return;
+    const videoConstraints = {
+      width: { ideal: 640 },
+      height: { ideal: 480 },
+      frameRate: { ideal: 30 }
+    };
+    if (deviceId) videoConstraints.deviceId = { exact: deviceId };
+
+    let newStream;
+    try {
+      newStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+    } catch (err) {
+      console.error('[Voice] Failed to switch camera:', err);
+      return;
+    }
+
+    const newTrack = newStream.getVideoTracks()[0];
+
+    // Replace track on all peers
+    for (const [, peer] of this.peers) {
+      const senders = peer.connection.getSenders();
+      const camSender = senders.find(s => s.track && s.track.kind === 'video' &&
+        this.webcamStream && this.webcamStream.getVideoTracks().includes(s.track));
+      if (camSender) {
+        await camSender.replaceTrack(newTrack).catch(e =>
+          console.warn('[Voice] replaceTrack (cam) failed:', e)
+        );
+      }
+    }
+
+    // Stop old tracks and update stream reference
+    this.webcamStream.getTracks().forEach(t => t.stop());
+    this.webcamStream = newStream;
+
+    // Re-hook ended
+    newTrack.onended = () => this.stopWebcam();
+
+    localStorage.setItem('haven_cam_device', deviceId || '');
+    console.log(`[Voice] Camera switched: ${deviceId || 'default'}`);
+  }
+
   // ── Screen Share Quality Helpers ───────────────────────
 
   setScreenResolution(h) {
@@ -615,6 +792,14 @@ class VoiceManager {
       this._applyScreenBitrate(connection, maxBitrate);
     }
 
+    // If our webcam is active, add the webcam video track
+    if (this.webcamStream && this.isWebcamActive) {
+      const camTrack = this.webcamStream.getVideoTracks()[0];
+      if (camTrack) {
+        connection.addTrack(camTrack, this.webcamStream);
+      }
+    }
+
     // Handle incoming remote tracks — route audio and video separately
     const remoteAudioStream = new MediaStream();
     const knownScreenStreamIds = new Set();
@@ -625,32 +810,48 @@ class VoiceManager {
       const track = event.track;
       const sourceStream = event.streams?.[0];
       if (track.kind === 'video') {
-        if (sourceStream) knownScreenStreamIds.add(sourceStream.id);
-        const videoStream = sourceStream || new MediaStream([track]);
-        if (this.onScreenStream) this.onScreenStream(userId, videoStream);
-        track.onunmute = () => {
-          // Create a fresh MediaStream so the video element detects a new srcObject
-          // (re-assigning the same object is a no-op in Chrome → black screen).
-          // Uses the track directly rather than videoStream.getTracks() to handle
-          // transceiver reuse where the old stream ref may be stale.
-          setTimeout(() => {
-            const freshStream = new MediaStream([track]);
-            if (this.onScreenStream) this.onScreenStream(userId, freshStream);
-          }, 150);
-        };
-        track.onmute = () => {
-          // Track temporarily stopped sending — force video to re-render
-          // when it resumes via onunmute above
-        };
-        track.onended = () => {
-          if (this.onScreenStream) this.onScreenStream(userId, null);
-        };
-        // Check if any deferred audio belongs to this screen stream
-        for (let i = deferredAudio.length - 1; i >= 0; i--) {
-          const d = deferredAudio[i];
-          if (d.sourceStream && knownScreenStreamIds.has(d.sourceStream.id)) {
-            deferredAudio.splice(i, 1);
-            this._playScreenAudio(userId, d.sourceStream);
+        // Distinguish webcam from screen share:
+        // - displaySurface is only set on getDisplayMedia tracks
+        // - also check our signaling state (webcamUsers vs screenSharers)
+        const settings = track.getSettings ? track.getSettings() : {};
+        const isScreenTrack = !!settings.displaySurface || this.screenSharers.has(userId);
+        const isWebcamTrack = !settings.displaySurface && this.webcamUsers.has(userId);
+
+        if (isWebcamTrack && !isScreenTrack) {
+          // Route to webcam callback
+          const camStream = sourceStream || new MediaStream([track]);
+          if (this.onWebcamStream) this.onWebcamStream(userId, camStream);
+          track.onunmute = () => {
+            setTimeout(() => {
+              const freshStream = new MediaStream([track]);
+              if (this.onWebcamStream) this.onWebcamStream(userId, freshStream);
+            }, 150);
+          };
+          track.onended = () => {
+            if (this.onWebcamStream) this.onWebcamStream(userId, null);
+          };
+        } else {
+          // Screen share video
+          if (sourceStream) knownScreenStreamIds.add(sourceStream.id);
+          const videoStream = sourceStream || new MediaStream([track]);
+          if (this.onScreenStream) this.onScreenStream(userId, videoStream);
+          track.onunmute = () => {
+            setTimeout(() => {
+              const freshStream = new MediaStream([track]);
+              if (this.onScreenStream) this.onScreenStream(userId, freshStream);
+            }, 150);
+          };
+          track.onmute = () => {};
+          track.onended = () => {
+            if (this.onScreenStream) this.onScreenStream(userId, null);
+          };
+          // Check if any deferred audio belongs to this screen stream
+          for (let i = deferredAudio.length - 1; i >= 0; i--) {
+            const d = deferredAudio[i];
+            if (d.sourceStream && knownScreenStreamIds.has(d.sourceStream.id)) {
+              deferredAudio.splice(i, 1);
+              this._playScreenAudio(userId, d.sourceStream);
+            }
           }
         }
       } else {
@@ -816,7 +1017,12 @@ class VoiceManager {
   }
 
   _createSilentAudioTrack() {
+    // Reuse cached silent track to avoid creating new AudioContext/oscillator on every deafen
+    if (this._cachedSilentTrack && this._cachedSilentTrack.readyState === 'live') {
+      return this._cachedSilentTrack;
+    }
     const ctx = this.audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (!this.audioCtx) this.audioCtx = ctx; // save for reuse
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
     gain.gain.value = 0; // completely silent
@@ -824,7 +1030,8 @@ class VoiceManager {
     const dest = ctx.createMediaStreamDestination();
     gain.connect(dest);
     oscillator.start();
-    return dest.stream.getAudioTracks()[0];
+    this._cachedSilentTrack = dest.stream.getAudioTracks()[0];
+    return this._cachedSilentTrack;
   }
 
   _getSavedVolume(userId) {

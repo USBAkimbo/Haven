@@ -148,6 +148,8 @@
               <button class="theme-btn" data-theme="win95" title="Windows 95"><span class="theme-icon">🪟</span></button>
               <button class="theme-btn" data-theme="custom" title="Custom"><span class="theme-icon" id="custom-theme-swatch">🎨</span></button>
               <button class="theme-btn" data-theme="rgb" title="RGB"><span class="theme-icon">🌈</span></button>
+              <button class="theme-btn" data-theme="daylight" title="Daylight (Light)"><span class="theme-icon">☀️</span></button>
+              <button class="theme-btn" data-theme="cloudy" title="Cloudy (Light)"><span class="theme-icon">☁️</span></button>
             </div>
             <!-- Effect overlay picker (mashup) -->
             <div class="effect-overlay-section">
@@ -280,6 +282,12 @@
             <span class="update-pulse"></span>
             <span class="update-text">Update Available</span>
           </a>
+          <!-- Desktop app banner -->
+          <a id="desktop-app-banner" class="desktop-app-banner" href="https://github.com/ancsemi/Haven-Desktop/releases/latest" target="_blank" rel="noopener" style="display:none">
+            <span class="desktop-app-icon">🖥️</span>
+            <span class="desktop-app-text">Get the Desktop App</span>
+            <button class="desktop-app-dismiss" id="desktop-app-dismiss" title="Dismiss">&times;</button>
+          </a>
           <!-- Spacer pushes voice controls to the right -->
           <div style="flex:1"></div>
           <!-- Right-side: dynamic indicators, then voice (always furthest right) -->
@@ -315,6 +323,30 @@
 
         <!-- Chat Area -->
         <div id="message-area" class="message-area" style="display:none">
+          <!-- Webcam Grid -->
+          <div id="webcam-container" class="webcam-container" style="display:none">
+            <div class="webcam-header">
+              <span id="webcam-label">📷 Cameras</span>
+              <div class="webcam-header-controls">
+                <div class="webcam-layout-picker" id="webcam-layout-picker" title="Camera layout">
+                  <button class="stream-layout-btn" id="webcam-layout-btn" title="Change layout">⊞</button>
+                  <div class="stream-layout-menu" id="webcam-layout-menu">
+                    <button class="stream-layout-opt active" data-layout="auto" title="Auto grid">⊞ Auto</button>
+                    <button class="stream-layout-opt" data-layout="vertical" title="Vertical stack">▬ Stack</button>
+                    <button class="stream-layout-opt" data-layout="side-by-side" title="Side by side">◫ Side</button>
+                    <button class="stream-layout-opt" data-layout="grid-2x2" title="2×2 Grid">⊟ 2×2</button>
+                  </div>
+                </div>
+                <label class="stream-size-label" title="Camera display size">
+                  📷
+                  <input type="range" id="webcam-size-slider" class="stream-size-slider" min="15" max="70" value="25">
+                </label>
+                <button id="webcam-collapse-btn" class="icon-btn small" title="Minimize cameras">─</button>
+                <button id="webcam-close-btn" class="icon-btn small" title="Close cameras">✕</button>
+              </div>
+            </div>
+            <div id="webcam-grid" class="webcam-grid"></div>
+          </div>
           <!-- Screen Share Viewer (multi-stream) -->
           <div id="screen-share-container" class="screen-share-container" style="display:none">
             <div class="screen-share-header">
@@ -495,6 +527,7 @@
         <div id="voice-panel" class="voice-panel" style="display:none">
           <button id="voice-mute-btn" class="voice-panel-btn" title="Mute">🎙️</button>
           <button id="voice-deafen-btn" class="voice-panel-btn" title="Deafen">🔊</button>
+          <button id="voice-cam-btn" class="voice-panel-btn" title="Camera">📷</button>
           <button id="screen-share-btn" class="voice-panel-btn" title="Share Screen">🖥️</button>
           <button id="voice-settings-toggle" class="voice-panel-btn" title="Voice Settings">⚙️</button>
           <span class="voice-panel-divider"></span>
@@ -839,6 +872,7 @@
           <div class="settings-nav-item" data-target="section-push">📲 Push</div>
           <div class="settings-nav-item" data-target="section-password">🔒 Password</div>
           <div class="settings-nav-item" data-target="section-delete-account">⚠️ Account</div>
+          <div class="settings-nav-item" data-target="section-plugins">🧩 Plugins & Themes</div>
           <div class="settings-nav-group settings-nav-admin" style="display:none">Admin</div>
           <div class="settings-nav-item settings-nav-admin" data-target="section-branding" style="display:none">🏠 Branding</div>
           <div class="settings-nav-item settings-nav-admin" data-target="section-members" style="display:none">👥 Members</div>
@@ -871,6 +905,29 @@
           <button type="button" class="density-btn" data-density="spacious" title="Spacious — more breathing room">
             <span class="density-icon">⬛</span>
             <span class="density-label">Spacious</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Font Size -->
+      <div class="settings-section" id="section-font-size" style="border-top: 1px solid var(--border-light); padding-top: 16px; margin-top: 8px;">
+        <h5 class="settings-section-title">🔤 Font Size</h5>
+        <div class="font-size-picker" id="font-size-picker">
+          <button type="button" class="density-btn" data-fontsize="small" title="Small — 13px base">
+            <span class="density-icon" style="font-size:11px">A</span>
+            <span class="density-label">Small</span>
+          </button>
+          <button type="button" class="density-btn active" data-fontsize="normal" title="Normal — 15px base (default)">
+            <span class="density-icon" style="font-size:14px">A</span>
+            <span class="density-label">Normal</span>
+          </button>
+          <button type="button" class="density-btn" data-fontsize="large" title="Large — 17px base">
+            <span class="density-icon" style="font-size:17px">A</span>
+            <span class="density-label">Large</span>
+          </button>
+          <button type="button" class="density-btn" data-fontsize="x-large" title="Extra Large — 20px base">
+            <span class="density-icon" style="font-size:20px">A</span>
+            <span class="density-label">XL</span>
           </button>
         </div>
       </div>
@@ -1007,6 +1064,19 @@
         <button class="btn-sm btn-danger-fill" id="delete-account-btn">Delete My Account</button>
       </div>
 
+      <!-- Plugins & Themes Section -->
+      <div class="settings-section" id="section-plugins">
+        <h5 class="settings-section-title">🧩 Plugins & Themes</h5>
+        <p class="settings-hint">Drop <code>.plugin.js</code> files into the <code>plugins/</code> folder and <code>.theme.css</code> files into the <code>themes/</code> folder, then refresh.</p>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <button class="btn-sm btn-accent" id="plugin-refresh-btn">🔄 Refresh</button>
+        </div>
+        <h6 style="margin:10px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted)">Plugins</h6>
+        <div id="plugin-list" class="plugin-list"></div>
+        <h6 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted)">Themes</h6>
+        <div id="theme-list" class="plugin-list"></div>
+      </div>
+
       <!-- Admin Section (hidden for non-admins) -->
       <div class="settings-section admin-settings-section" id="admin-mod-panel" style="display:none">
         <h5 class="settings-section-title">🛡️ Admin</h5>
@@ -1043,6 +1113,7 @@
             </select>
           </label>
           <button class="btn-sm btn-full" id="view-bans-btn">📋 View Bans</button>
+          <button class="btn-sm btn-full" id="view-all-members-btn" style="margin-top:6px">👥 View All Members</button>
         </div>
         <div class="admin-settings" id="section-whitelist" style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
           <h5 class="settings-section-subtitle">🛡️ Whitelist</h5>
@@ -1419,6 +1490,29 @@
     </div>
   </div>
 
+  <!-- All Members Modal (Admin) -->
+  <div class="modal-overlay" id="all-members-modal" style="display:none">
+    <div class="modal modal-wide" style="max-width:640px;max-height:80vh;display:flex;flex-direction:column">
+      <h3>👥 All Members <span id="all-members-count" class="muted-text" style="font-size:13px;font-weight:normal"></span></h3>
+      <div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="all-members-search" placeholder="Search users..." maxlength="40" class="settings-text-input" style="flex:1;min-width:140px">
+        <select id="all-members-filter" style="font-size:12px;padding:4px 8px;border-radius:var(--radius-sm);background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border)">
+          <option value="all">All</option>
+          <option value="online">Online</option>
+          <option value="offline">Offline</option>
+          <option value="new">New (7 days)</option>
+          <option value="banned">Banned</option>
+        </select>
+      </div>
+      <div id="all-members-list" style="overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:4px">
+        <p class="muted-text" style="text-align:center;padding:20px">Loading...</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-sm" id="close-all-members-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Music Share Modal -->
   <div class="modal-overlay" id="music-modal" style="display:none">
     <div class="modal">
@@ -1722,6 +1816,29 @@
     </div>
   </div>
 
+  <!-- Desktop App Promo Popup -->
+  <div class="modal-overlay" id="desktop-promo-modal" style="display:none">
+    <div class="modal desktop-promo">
+      <div class="desktop-promo-icon">🖥️</div>
+      <h3 class="desktop-promo-title">Haven Desktop App <span class="desktop-promo-badge">BETA</span></h3>
+      <p class="desktop-promo-subtitle">Now available for your platform!</p>
+      <ul class="desktop-promo-features">
+        <li><span class="promo-check">✓</span> Native system notifications</li>
+        <li><span class="promo-check">✓</span> Minimize to system tray</li>
+        <li><span class="promo-check">✓</span> Per-app audio routing</li>
+        <li><span class="promo-check">✓</span> Built-in server launcher</li>
+      </ul>
+      <p class="desktop-promo-meta" id="desktop-promo-meta">Windows Installer • v1.0.0</p>
+      <div class="desktop-promo-actions">
+        <a id="desktop-promo-install" class="btn btn-accent desktop-promo-install" href="https://github.com/AncSemi/Haven-Desktop/releases/latest" target="_blank" rel="noopener">⬇ Install Haven</a>
+        <button id="desktop-promo-later" class="btn desktop-promo-later">Maybe later</button>
+      </div>
+      <label class="desktop-promo-dismiss-label">
+        <input type="checkbox" id="desktop-promo-dismiss-check"> Don't show this again
+      </label>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
 
   <!-- Image Lightbox Overlay -->
@@ -1735,5 +1852,6 @@
   <script src="/js/modmode.js?v=1.8.0"></script>
   <script src="/js/e2e.js?v=2.1.0"></script>
   <script src="/js/app.js?v=2.1.0"></script>
+  <script src="/js/plugin-loader.js?v=1.0.0"></script>
 </body>
 </html>

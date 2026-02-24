@@ -26,29 +26,21 @@ function isInt(v) {
 // could be rendered as executable HTML in case of client-side bugs.
 function sanitizeText(str) {
   if (typeof str !== 'string') return '';
-  // Strip actual HTML tags that could execute scripts or load resources
-  // We preserve markdown formatting characters but neutralize HTML
+  // Strip dangerous HTML tags/attributes as defense-in-depth.
+  // Do NOT entity-encode here — the client handles its own escaping when
+  // rendering via _escapeHtml(). Entity-encoding on the server would cause
+  // double-encoding (e.g. ' → &#39; stored → &amp;#39; after client escape).
   return str
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<\/script>/gi, '')
-    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
-    .replace(/<object\b[^>]*>[\s\S]*?<\/object>/gi, '')
-    .replace(/<embed\b[^>]*\/?>/gi, '')
-    .replace(/<link\b[^>]*\/?>/gi, '')
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<meta\b[^>]*\/?>/gi, '')
-    .replace(/<form\b[^>]*>[\s\S]*?<\/form>/gi, '')
-    .replace(/<img\b[^>]*\/?>/gi, '')
-    .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '')
-    .replace(/<video\b[^>]*>[\s\S]*?<\/video>/gi, '')
-    .replace(/<audio\b[^>]*>[\s\S]*?<\/audio>/gi, '')
-    .replace(/<source\b[^>]*\/?>/gi, '')
-    .replace(/<details\b[^>]*>[\s\S]*?<\/details>/gi, '')
-    .replace(/<math\b[^>]*>[\s\S]*?<\/math>/gi, '')
-    .replace(/<base\b[^>]*\/?>/gi, '')
-    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')  // strip event handlers like onerror="..."
-    .replace(/on\w+\s*=\s*[^\s>]+/gi, '')         // strip unquoted event handlers
-    .replace(/javascript\s*:/gi, 'blocked:');       // neutralize javascript: URIs
+    .replace(/<script[\s>][\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe[\s>][\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object[\s>][\s\S]*?<\/object>/gi, '')
+    .replace(/<embed[\s>][\s\S]*?(?:\/>|>)/gi, '')
+    .replace(/<style[\s>][\s\S]*?<\/style>/gi, '')
+    .replace(/<meta[\s>][\s\S]*?(?:\/>|>)/gi, '')
+    .replace(/<form[\s>][\s\S]*?<\/form>/gi, '')
+    .replace(/<link[\s>][\s\S]*?(?:\/>|>)/gi, '')
+    .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/javascript\s*:/gi, '');
 }
 
 // ── Validate /uploads/ path (prevent path traversal) ──
@@ -391,11 +383,18 @@ function setupSocketHandlers(io, db) {
 
     // Refresh display_name, avatar AND is_admin from DB (JWT may be stale)
     try {
-      const uRow = db.prepare('SELECT display_name, is_admin, username, avatar, avatar_shape FROM users WHERE id = ?').get(user.id);
+      const uRow = db.prepare('SELECT display_name, is_admin, username, avatar, avatar_shape, password_version FROM users WHERE id = ?').get(user.id);
 
       // Identity cross-check: reject if the DB user_id now belongs to a different account
       // (happens when the database is reset/recreated and IDs get reassigned)
       if (!uRow || uRow.username !== user.username) {
+        return next(new Error('Session expired'));
+      }
+
+      // Password version check — reject tokens issued before a password change
+      const dbPwv = uRow.password_version || 1;
+      const tokenPwv = user.pwv || 1;
+      if (tokenPwv < dbPwv) {
         return next(new Error('Session expired'));
       }
 
@@ -456,6 +455,8 @@ function setupSocketHandlers(io, db) {
   const activeMusic = new Map();
   // Active screen sharers per voice room:  code → Set<userId>
   const activeScreenSharers = new Map();
+  // Active webcam users per voice room:  code → Set<userId>
+  const activeWebcamUsers = new Map();
   // Stream viewers:  "code:sharerId" → Set<viewerUserId>
   const streamViewers = new Map();
   // Slow mode tracker:  "slow:{userId}:{channelId}" → timestamp of last message
@@ -642,8 +643,20 @@ function setupSocketHandlers(io, db) {
       return false;
     }
 
+    // Events exempt from flood counting (WebRTC signaling generates
+    // high-frequency traffic that is not user-initiated spam)
+    const FLOOD_EXEMPT = new Set([
+      'voice-offer', 'voice-answer', 'voice-ice-candidate',
+      'screen-share-started', 'screen-share-stopped',
+      'voice-speaking', 'webcam-started', 'webcam-stopped',
+      'stream-viewer-joined', 'stream-viewer-left',
+      'visibility-change'
+    ]);
+
     // Global event counter — disconnect if spamming
     socket.use((packet, next) => {
+      const eventName = packet[0];
+      if (FLOOD_EXEMPT.has(eventName)) return next();
       if (floodCheck('event')) {
         socket.emit('error-msg', 'Slow down — too many requests');
         return; // drop the event silently
@@ -1117,6 +1130,7 @@ function setupSocketHandlers(io, db) {
 
       // Batch reactions
       const reactionMap = new Map(); // messageId → [reactions]
+      let pinnedSet = null;
       if (msgIds.length > 0) {
         const ph = msgIds.map(() => '?').join(',');
         db.prepare(`
@@ -1129,7 +1143,7 @@ function setupSocketHandlers(io, db) {
         });
 
         // Batch pin status
-        var pinnedSet = new Set(
+        pinnedSet = new Set(
           db.prepare(`SELECT message_id FROM pinned_messages WHERE message_id IN (${ph})`)
             .all(...msgIds).map(r => r.message_id)
         );
@@ -1451,6 +1465,31 @@ function setupSocketHandlers(io, db) {
           }
         }, 2000);
       }
+
+      // Send active webcam info to late joiner — tell webcam users to renegotiate
+      const camUsers = activeWebcamUsers.get(code);
+      if (camUsers && camUsers.size > 0) {
+        socket.emit('active-webcam-users', {
+          channelCode: code,
+          users: Array.from(camUsers).map(uid => {
+            const u = voiceUsers.get(code)?.get(uid);
+            return u ? { id: uid, username: u.username } : null;
+          }).filter(Boolean)
+        });
+        // After a delay (let initial offer/answer complete), tell each
+        // webcam user to renegotiate so the late joiner receives video tracks.
+        setTimeout(() => {
+          for (const camUserId of camUsers) {
+            const camUserInfo = voiceUsers.get(code)?.get(camUserId);
+            if (camUserInfo) {
+              io.to(camUserInfo.socketId).emit('renegotiate-webcam', {
+                targetUserId: socket.user.id,
+                channelCode: code
+              });
+            }
+          }
+        }, 2500);
+      }
     });
 
     socket.on('voice-offer', (data) => {
@@ -1543,6 +1582,10 @@ function setupSocketHandlers(io, db) {
       const sharers = activeScreenSharers.get(data.code);
       if (sharers) { sharers.delete(data.userId); if (sharers.size === 0) activeScreenSharers.delete(data.code); }
 
+      // Untrack webcam user if they had their camera on
+      const camUsers = activeWebcamUsers.get(data.code);
+      if (camUsers) { camUsers.delete(data.userId); if (camUsers.size === 0) activeWebcamUsers.delete(data.code); }
+
       // Clean up stream viewer entries
       const viewerKey = `${data.code}:${data.userId}`;
       streamViewers.delete(viewerKey);
@@ -1625,6 +1668,50 @@ function setupSocketHandlers(io, db) {
       }
       // Broadcast updated viewer/sharer info
       broadcastStreamInfo(data.code);
+    });
+
+    // ── Webcam Signaling ──────────────────────────────────
+
+    socket.on('webcam-started', (data) => {
+      if (!data || typeof data !== 'object') return;
+      if (!isString(data.code, 8, 8)) return;
+      const voiceRoom = voiceUsers.get(data.code);
+      if (!voiceRoom || !voiceRoom.has(socket.user.id)) return;
+
+      if (!activeWebcamUsers.has(data.code)) activeWebcamUsers.set(data.code, new Set());
+      activeWebcamUsers.get(data.code).add(socket.user.id);
+
+      for (const [uid, user] of voiceRoom) {
+        if (uid !== socket.user.id) {
+          io.to(user.socketId).emit('webcam-started', {
+            userId: socket.user.id,
+            username: socket.user.displayName,
+            channelCode: data.code
+          });
+        }
+      }
+    });
+
+    socket.on('webcam-stopped', (data) => {
+      if (!data || typeof data !== 'object') return;
+      if (!isString(data.code, 8, 8)) return;
+      const voiceRoom = voiceUsers.get(data.code);
+      if (!voiceRoom || !voiceRoom.has(socket.user.id)) return;
+
+      const camUsers = activeWebcamUsers.get(data.code);
+      if (camUsers) {
+        camUsers.delete(socket.user.id);
+        if (camUsers.size === 0) activeWebcamUsers.delete(data.code);
+      }
+
+      for (const [uid, user] of voiceRoom) {
+        if (uid !== socket.user.id) {
+          io.to(user.socketId).emit('webcam-stopped', {
+            userId: socket.user.id,
+            channelCode: data.code
+          });
+        }
+      }
     });
 
     // ── Stream Viewer Tracking ──────────────────────────
@@ -2557,6 +2644,10 @@ function setupSocketHandlers(io, db) {
         db.prepare('DELETE FROM mutes WHERE user_id = ?').run(uid);
         db.prepare('DELETE FROM bans WHERE user_id = ?').run(uid);
         db.prepare('DELETE FROM channel_members WHERE user_id = ?').run(uid);
+        db.prepare('DELETE FROM user_roles WHERE user_id = ?').run(uid);
+        db.prepare('DELETE FROM read_positions WHERE user_id = ?').run(uid);
+        db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').run(uid);
+        db.prepare('DELETE FROM fcm_tokens WHERE user_id = ?').run(uid);
         // Re-assign pins to the admin performing the deletion, then nullify messages
         db.prepare('UPDATE pinned_messages SET pinned_by = ? WHERE pinned_by = ?').run(socket.user.id, uid);
         db.prepare('DELETE FROM high_scores WHERE user_id = ?').run(uid);
@@ -2645,6 +2736,7 @@ function setupSocketHandlers(io, db) {
         db.prepare('DELETE FROM mutes WHERE user_id = ?').run(uid);
         db.prepare('DELETE FROM bans WHERE user_id = ?').run(uid);
         db.prepare('DELETE FROM user_roles WHERE user_id = ?').run(uid);
+        db.prepare('DELETE FROM read_positions WHERE user_id = ?').run(uid);
         db.prepare('DELETE FROM high_scores WHERE user_id = ?').run(uid);
         db.prepare('DELETE FROM eula_acceptances WHERE user_id = ?').run(uid);
         db.prepare('DELETE FROM user_preferences WHERE user_id = ?').run(uid);
@@ -3610,6 +3702,74 @@ function setupSocketHandlers(io, db) {
       }
     });
 
+    // ═══════════════ INVITE USER TO CHANNEL ════════════════
+
+    socket.on('invite-to-channel', (data) => {
+      if (!data || typeof data !== 'object') return;
+      const targetUserId = isInt(data.targetUserId) ? data.targetUserId : null;
+      const channelId = isInt(data.channelId) ? data.channelId : null;
+      if (!targetUserId || !channelId) return socket.emit('error-msg', 'Invalid invite data');
+      if (targetUserId === socket.user.id) return;
+
+      // Check inviter is a member of this channel
+      const inviterMember = db.prepare(
+        'SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?'
+      ).get(channelId, socket.user.id);
+      if (!inviterMember && !socket.user.isAdmin) {
+        return socket.emit('error-msg', 'You are not a member of that channel');
+      }
+
+      // Check channel exists and is not a DM
+      const channel = db.prepare('SELECT * FROM channels WHERE id = ? AND is_dm = 0').get(channelId);
+      if (!channel) return socket.emit('error-msg', 'Channel not found');
+
+      // Check target user exists
+      const targetUser = db.prepare('SELECT id, username FROM users WHERE id = ?').get(targetUserId);
+      if (!targetUser) return socket.emit('error-msg', 'User not found');
+
+      // Check target isn't already a member
+      const alreadyMember = db.prepare(
+        'SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?'
+      ).get(channelId, targetUserId);
+      if (alreadyMember) {
+        return socket.emit('error-msg', `${targetUser.username} is already in #${channel.name}`);
+      }
+
+      // Add the target user to the channel
+      db.prepare('INSERT INTO channel_members (channel_id, user_id) VALUES (?, ?)').run(channelId, targetUserId);
+
+      // Also add to non-private sub-channels
+      if (!channel.parent_channel_id) {
+        const subs = db.prepare(
+          'SELECT id, code FROM channels WHERE parent_channel_id = ? AND is_private = 0'
+        ).all(channel.id);
+        const insertSub = db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id) VALUES (?, ?)');
+        subs.forEach(sub => insertSub.run(sub.id, targetUserId));
+      }
+
+      // Auto-assign roles
+      try {
+        const autoRoles = db.prepare('SELECT id FROM roles WHERE auto_assign = 1').all();
+        const insertAutoRole = db.prepare('INSERT OR IGNORE INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, NULL, NULL)');
+        for (const ar of autoRoles) { insertAutoRole.run(targetUserId, ar.id); }
+      } catch { /* non-critical */ }
+
+      // If the target user is online, refresh their channel list
+      const targetSockets = [...io.sockets.sockets.values()].filter(s => s.user && s.user.id === targetUserId);
+      for (const ts of targetSockets) {
+        ts.join(`channel:${channel.code}`);
+        // Also join sub-channel rooms
+        if (!channel.parent_channel_id) {
+          const subs = db.prepare('SELECT code FROM channels WHERE parent_channel_id = ? AND is_private = 0').all(channel.id);
+          subs.forEach(sub => ts.join(`channel:${sub.code}`));
+        }
+        ts.emit('channels-list', getEnrichedChannels(targetUserId, ts.user.isAdmin, (room) => ts.join(room)));
+        ts.emit('toast', { message: `${socket.user.username} invited you to #${channel.name}`, type: 'info' });
+      }
+
+      socket.emit('error-msg', `Invited ${targetUser.username} to #${channel.name}`);
+    });
+
     // ═══════════════ DIRECT MESSAGES ═══════════════════════
 
     socket.on('start-dm', (data) => {
@@ -3797,6 +3957,10 @@ function setupSocketHandlers(io, db) {
       const sharers = activeScreenSharers.get(code);
       if (sharers) { sharers.delete(socket.user.id); if (sharers.size === 0) activeScreenSharers.delete(code); }
 
+      // Untrack webcam user if they had their camera on
+      const camUsers = activeWebcamUsers.get(code);
+      if (camUsers) { camUsers.delete(socket.user.id); if (camUsers.size === 0) activeWebcamUsers.delete(code); }
+
       // Clean up stream viewer entries for this user (as sharer or viewer)
       const viewerKey = `${code}:${socket.user.id}`;
       streamViewers.delete(viewerKey);  // remove their stream's viewer list
@@ -3959,6 +4123,74 @@ function setupSocketHandlers(io, db) {
         }
       }
     }
+
+    // ═══════════════ ADMIN MEMBER LIST ═════════════════════
+
+    socket.on('get-all-members', (data, callback) => {
+      const cb = typeof callback === 'function' ? callback : () => {};
+      if (!socket.user.isAdmin) return cb({ error: 'Admin access required' });
+
+      try {
+        // All registered users (excluding banned by default, unless requested)
+        const users = db.prepare(`
+          SELECT u.id, u.username, COALESCE(u.display_name, u.username) as displayName,
+                 u.is_admin, u.created_at, u.avatar, u.avatar_shape, u.status, u.status_text
+          FROM users u
+          LEFT JOIN bans b ON u.id = b.user_id
+          ORDER BY u.created_at DESC
+        `).all();
+
+        // Build online set from connected sockets
+        const onlineIds = new Set();
+        for (const [, s] of io.of('/').sockets) {
+          if (s.user) onlineIds.add(s.user.id);
+        }
+
+        // Fetch all user-role assignments
+        const roleRows = db.prepare(`
+          SELECT ur.user_id, r.id as role_id, r.name, r.level, r.color
+          FROM user_roles ur
+          JOIN roles r ON ur.role_id = r.id
+          WHERE ur.channel_id IS NULL
+          ORDER BY r.level DESC
+        `).all();
+        const userRoles = {};
+        roleRows.forEach(r => {
+          if (!userRoles[r.user_id]) userRoles[r.user_id] = [];
+          userRoles[r.user_id].push({ id: r.role_id, name: r.name, level: r.level, color: r.color });
+        });
+
+        // Check banned status
+        const bannedRows = db.prepare('SELECT user_id FROM bans').all();
+        const bannedIds = new Set(bannedRows.map(r => r.user_id));
+
+        // Count channels per user
+        const channelCounts = {};
+        const ccRows = db.prepare('SELECT user_id, COUNT(*) as cnt FROM channel_members GROUP BY user_id').all();
+        ccRows.forEach(r => { channelCounts[r.user_id] = r.cnt; });
+
+        const members = users.map(u => ({
+          id: u.id,
+          username: u.username,
+          displayName: u.displayName,
+          isAdmin: !!u.is_admin,
+          online: onlineIds.has(u.id),
+          banned: bannedIds.has(u.id),
+          roles: userRoles[u.id] || [],
+          channels: channelCounts[u.id] || 0,
+          avatar: u.avatar || null,
+          avatarShape: u.avatar_shape || 'circle',
+          status: u.status || 'online',
+          statusText: u.status_text || '',
+          createdAt: u.created_at
+        }));
+
+        cb({ members, total: members.length });
+      } catch (err) {
+        console.error('get-all-members error:', err);
+        cb({ error: 'Failed to load members' });
+      }
+    });
 
     // ═══════════════ ROLE MANAGEMENT ═════════════════════════
 
@@ -4486,32 +4718,37 @@ function setupSocketHandlers(io, db) {
       if (targetUser.is_admin) return cb({ error: 'User is already an admin' });
 
       try {
-        // Make target an admin
-        db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(userId);
+        // Wrap all DB mutations in a transaction so a crash can't leave
+        // both users as admin or neither as admin
+        const transferTxn = db.transaction(() => {
+          // Make target an admin
+          db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(userId);
 
-        // Demote the current admin — remove admin flag, give them a level-99 role
-        db.prepare('UPDATE users SET is_admin = 0 WHERE id = ?').run(socket.user.id);
-        // Create or find a "Former Admin" role at level 99
-        let formerAdminRole = db.prepare("SELECT id FROM roles WHERE name = 'Former Admin' AND level = 99").get();
-        if (!formerAdminRole) {
-          const r = db.prepare("INSERT INTO roles (name, level, scope, color) VALUES ('Former Admin', 99, 'server', '#e74c3c')").run();
-          formerAdminRole = { id: r.lastInsertRowid };
-          // Give all permissions
-          const allPerms = [
-            'kick_user', 'mute_user', 'ban_user', 'delete_message', 'delete_own_messages',
-            'delete_lower_messages', 'edit_own_messages', 'pin_message', 'set_channel_topic',
-            'manage_sub_channels', 'rename_channel', 'rename_sub_channel',
-            'upload_files', 'use_voice', 'manage_webhooks', 'mention_everyone', 'view_history',
-            'promote_user', 'transfer_admin'
-          ];
-          const insertPerm = db.prepare('INSERT OR IGNORE INTO role_permissions (role_id, permission, allowed) VALUES (?, ?, 1)');
-          allPerms.forEach(p => insertPerm.run(formerAdminRole.id, p));
-        }
-        // Explicitly remove then insert to avoid NULL-unique duplication
-        db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ? AND channel_id IS NULL').run(socket.user.id, formerAdminRole.id);
-        db.prepare('INSERT INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, NULL, ?)').run(
-          socket.user.id, formerAdminRole.id, socket.user.id
-        );
+          // Demote the current admin — remove admin flag, give them a level-99 role
+          db.prepare('UPDATE users SET is_admin = 0 WHERE id = ?').run(socket.user.id);
+          // Create or find a "Former Admin" role at level 99
+          let formerAdminRole = db.prepare("SELECT id FROM roles WHERE name = 'Former Admin' AND level = 99").get();
+          if (!formerAdminRole) {
+            const r = db.prepare("INSERT INTO roles (name, level, scope, color) VALUES ('Former Admin', 99, 'server', '#e74c3c')").run();
+            formerAdminRole = { id: r.lastInsertRowid };
+            // Give all permissions
+            const allPerms = [
+              'kick_user', 'mute_user', 'ban_user', 'delete_message', 'delete_own_messages',
+              'delete_lower_messages', 'edit_own_messages', 'pin_message', 'set_channel_topic',
+              'manage_sub_channels', 'rename_channel', 'rename_sub_channel',
+              'upload_files', 'use_voice', 'manage_webhooks', 'mention_everyone', 'view_history',
+              'promote_user', 'transfer_admin'
+            ];
+            const insertPerm = db.prepare('INSERT OR IGNORE INTO role_permissions (role_id, permission, allowed) VALUES (?, ?, 1)');
+            allPerms.forEach(p => insertPerm.run(formerAdminRole.id, p));
+          }
+          // Explicitly remove then insert to avoid NULL-unique duplication
+          db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ? AND channel_id IS NULL').run(socket.user.id, formerAdminRole.id);
+          db.prepare('INSERT INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, NULL, ?)').run(
+            socket.user.id, formerAdminRole.id, socket.user.id
+          );
+        });
+        transferTxn();
 
         // Update all connected sockets of both users
         for (const [, s] of io.sockets.sockets) {

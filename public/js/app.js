@@ -153,10 +153,12 @@ class HavenApp {
     this.modMode = typeof ModMode === 'function' ? new ModMode() : null;
     this.modMode?.init();
     this._setupDensityPicker();
+    this._setupFontSizePicker();
     this._setupImageModePicker();
     this._setupLightbox();
     this._setupOnlineOverlay();
     this._checkForUpdates();
+    this._initDesktopAppBanner();
 
     // CSP-safe image error handling (no inline onerror attributes)
     // For avatar images, hide the broken img and show the letter-initial fallback
@@ -374,6 +376,24 @@ class HavenApp {
       document.getElementById('status-server-text').textContent = 'Error';
     });
 
+    // Password was changed on this or another session — force re-login
+    this.socket.on('force-logout', (data) => {
+      if (data && data.reason === 'password_changed') {
+        // If WE just changed the password, we already have the fresh token
+        const freshToken = localStorage.getItem('haven_token');
+        if (freshToken && freshToken !== this.token) {
+          // Another tab/device changed it but we somehow got a new token — use it
+          this.token = freshToken;
+          this.socket.auth.token = freshToken;
+          return;
+        }
+        // Otherwise this is a different session — kick to login
+        localStorage.removeItem('haven_token');
+        localStorage.removeItem('haven_user');
+        window.location.href = '/';
+      }
+    });
+
     this.socket.on('channels-list', (channels) => {
       this.channels = channels;
       this._renderChannels();
@@ -560,6 +580,10 @@ class HavenApp {
       this._showToast(msg, 'error');
     });
 
+    this.socket.on('toast', (data) => {
+      if (data && data.message) this._showToast(data.message, data.type || 'info');
+    });
+
     this.socket.on('pong-check', () => {
       if (this._pingStart) {
         const latency = Date.now() - this._pingStart;
@@ -727,6 +751,11 @@ class HavenApp {
     });
 
     // ── User profile popup data ─────────────────────
+    this._isHoverPopup = false;
+    this._hoverProfileTimer = null;
+    this._hoverCloseTimer = null;
+    this._hoverTarget = null;
+
     this.socket.on('user-profile', (profile) => {
       this._showProfilePopup(profile);
     });
@@ -1502,9 +1531,23 @@ class HavenApp {
     document.getElementById('voice-mute-btn').addEventListener('click', () => this._toggleMute());
     document.getElementById('voice-deafen-btn').addEventListener('click', () => this._toggleDeafen());
     document.getElementById('voice-leave-sidebar-btn').addEventListener('click', () => this._leaveVoice());
+    document.getElementById('voice-cam-btn').addEventListener('click', () => this._toggleWebcam());
     document.getElementById('screen-share-btn').addEventListener('click', () => this._toggleScreenShare());
     document.getElementById('screen-share-minimize').addEventListener('click', () => this._hideScreenShare());
     document.getElementById('screen-share-close').addEventListener('click', () => this._closeScreenShare());
+    document.getElementById('webcam-collapse-btn').addEventListener('click', () => {
+      const wc = document.getElementById('webcam-container');
+      if (wc) {
+        wc.style.display = 'none';
+        // Show a restore indicator in the channel header
+        const grid = document.getElementById('webcam-grid');
+        const count = grid ? grid.children.length : 0;
+        if (count > 0) this._showWebcamIndicator(count);
+      }
+    });
+    document.getElementById('webcam-close-btn').addEventListener('click', () => {
+      this._closeWebcam();
+    });
 
     // Music controls
     document.getElementById('music-share-btn')?.addEventListener('click', () => this._openMusicModal());
@@ -1652,6 +1695,65 @@ class HavenApp {
       document.addEventListener('click', () => layoutMenu.classList.remove('open'));
     }
 
+    // ── Webcam size slider ──
+    const webcamSizeSlider = document.getElementById('webcam-size-slider');
+    if (webcamSizeSlider) {
+      const savedWcSize = localStorage.getItem('haven_webcam_size');
+      if (savedWcSize) webcamSizeSlider.value = savedWcSize;
+      let _wcResizeRAF = null;
+      const applyWcSize = () => {
+        if (_wcResizeRAF) cancelAnimationFrame(_wcResizeRAF);
+        _wcResizeRAF = requestAnimationFrame(() => {
+          const container = document.getElementById('webcam-container');
+          const grid = document.getElementById('webcam-grid');
+          // Auto-exit focus mode when resizing
+          if (container.classList.contains('webcam-focus-mode')) {
+            grid.querySelectorAll('.webcam-tile').forEach(t => t.classList.remove('webcam-focused'));
+            container.classList.remove('webcam-focus-mode');
+          }
+          const vh = parseInt(webcamSizeSlider.value, 10);
+          container.style.maxHeight = vh + 'vh';
+          grid.style.maxHeight = (vh - 2) + 'vh';
+          // Scale tile width proportionally with the slider
+          const tileMaxW = Math.max(vh * 1.33, 15); // ~4:3 aspect ratio
+          document.querySelectorAll('.webcam-tile').forEach(t => { t.style.maxWidth = tileMaxW + 'vw'; });
+          document.querySelectorAll('.webcam-tile video').forEach(v => { v.style.maxHeight = (vh - 4) + 'vh'; });
+          localStorage.setItem('haven_webcam_size', vh);
+          _wcResizeRAF = null;
+        });
+      };
+      applyWcSize();
+      webcamSizeSlider.addEventListener('input', applyWcSize);
+    }
+
+    // ── Webcam layout picker ──
+    const wcLayoutBtn = document.getElementById('webcam-layout-btn');
+    const wcLayoutMenu = document.getElementById('webcam-layout-menu');
+    if (wcLayoutBtn && wcLayoutMenu) {
+      const savedWcLayout = localStorage.getItem('haven_webcam_layout') || 'auto';
+      this._applyWebcamLayout(savedWcLayout);
+      wcLayoutMenu.querySelector(`[data-layout="${savedWcLayout}"]`)?.classList.add('active');
+
+      wcLayoutBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        wcLayoutMenu.classList.toggle('open');
+      });
+      wcLayoutMenu.querySelectorAll('.stream-layout-opt').forEach(opt => {
+        opt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const mode = opt.dataset.layout;
+          wcLayoutMenu.querySelectorAll('.stream-layout-opt').forEach(o => o.classList.remove('active'));
+          opt.classList.add('active');
+          this._applyWebcamLayout(mode);
+          localStorage.setItem('haven_webcam_layout', mode);
+          wcLayoutMenu.classList.remove('open');
+        });
+      });
+      document.addEventListener('click', () => wcLayoutMenu.classList.remove('open'));
+    }
+
+    // ── Webcam collapse button ── (handler already bound above)
+
     document.getElementById('voice-ns-slider').addEventListener('input', (e) => {
       if (this.voice && this.voice.inVoice) {
         this.voice.setNoiseSensitivity(parseInt(e.target.value, 10));
@@ -1688,6 +1790,8 @@ class HavenApp {
 
     // Wire up the voice manager's video callback
     this.voice.onScreenStream = (userId, stream) => this._handleScreenStream(userId, stream);
+    // Wire up webcam video callback
+    this.voice.onWebcamStream = (userId, stream) => this._handleWebcamStream(userId, stream);
     // Wire up screen share audio callback
     this.voice.onScreenAudio = (userId) => this._handleScreenAudio(userId);
     // Wire up no-audio indicator for streams without audio
@@ -2047,6 +2151,9 @@ class HavenApp {
       if (!msgEl) return;
       const userId = parseInt(msgEl.dataset.userId);
       if (!isNaN(userId)) {
+        clearTimeout(this._hoverProfileTimer);
+        clearTimeout(this._hoverCloseTimer);
+        this._isHoverPopup = false;
         this._profilePopupAnchor = e.target;
         this.socket.emit('get-user-profile', { userId });
       }
@@ -2060,9 +2167,75 @@ class HavenApp {
       if (!userItem) return;
       const userId = parseInt(userItem.dataset.userId);
       if (!isNaN(userId)) {
+        clearTimeout(this._hoverProfileTimer);
+        clearTimeout(this._hoverCloseTimer);
+        this._isHoverPopup = false;
         this._profilePopupAnchor = userItem;
         this.socket.emit('get-user-profile', { userId });
       }
+    });
+
+    // ── Right-click user → Invite to channel ──
+    document.getElementById('online-users').addEventListener('contextmenu', (e) => {
+      const userItem = e.target.closest('.user-item');
+      if (!userItem) return;
+      const userId = parseInt(userItem.dataset.userId);
+      if (isNaN(userId) || userId === this.user.id) return;
+      e.preventDefault();
+      this._showUserContextMenu(e, userId);
+    });
+
+    // ── Profile popup: hover-over on usernames/avatars (translucent preview) ──
+    const setupHoverProfile = (container, getInfo) => {
+      container.addEventListener('mouseover', (e) => {
+        const trigger = getInfo(e);
+        if (!trigger) return;
+        if (trigger.el === this._hoverTarget) return;
+        clearTimeout(this._hoverProfileTimer);
+        clearTimeout(this._hoverCloseTimer);
+        this._hoverTarget = trigger.el;
+
+        // Don't show hover popup if a click-based popup is already open
+        if (document.getElementById('profile-popup') && !this._isHoverPopup) return;
+
+        this._hoverProfileTimer = setTimeout(() => {
+          if (!isNaN(trigger.userId)) {
+            this._profilePopupAnchor = trigger.el;
+            this._isHoverPopup = true;
+            this.socket.emit('get-user-profile', { userId: trigger.userId });
+          }
+        }, 400);
+      });
+
+      container.addEventListener('mouseout', (e) => {
+        const related = e.relatedTarget;
+        // If mouse moved to the popup itself, don't close
+        if (related && related.closest && related.closest('#profile-popup')) return;
+        clearTimeout(this._hoverProfileTimer);
+        this._hoverTarget = null;
+        if (this._isHoverPopup) {
+          this._hoverCloseTimer = setTimeout(() => {
+            if (this._isHoverPopup) this._closeProfilePopup();
+          }, 300);
+        }
+      });
+    };
+
+    setupHoverProfile(document.getElementById('messages'), (e) => {
+      const author = e.target.closest('.message-author');
+      const avatar = e.target.closest('.message-avatar, .message-avatar-img');
+      if (!author && !avatar) return null;
+      if (e.target.closest('.msg-toolbar')) return null;
+      const msgEl = (author || avatar).closest('.message, .message-compact');
+      if (!msgEl) return null;
+      return { el: author || avatar, userId: parseInt(msgEl.dataset.userId) };
+    });
+
+    setupHoverProfile(document.getElementById('online-users'), (e) => {
+      if (e.target.closest('.user-action-btn') || e.target.closest('.user-admin-actions')) return null;
+      const userItem = e.target.closest('.user-item');
+      if (!userItem) return null;
+      return { el: userItem, userId: parseInt(userItem.dataset.userId) };
     });
 
     document.getElementById('cancel-rename-btn').addEventListener('click', () => {
@@ -2179,6 +2352,8 @@ class HavenApp {
         // Store the fresh token
         this.token = data.token;
         localStorage.setItem('haven_token', data.token);
+        // Update socket auth so auto-reconnect uses the new token
+        this.socket.auth.token = data.token;
 
         // Re-wrap E2E private key with a key derived from the NEW password
         // so the server backup can be unlocked with the new credentials
@@ -2199,6 +2374,14 @@ class HavenApp {
       } catch {
         hint.textContent = 'Network error';
         hint.classList.add('error');
+      }
+    });
+
+    // ── Plugin refresh button ─────────────────────────────
+    document.getElementById('plugin-refresh-btn')?.addEventListener('click', () => {
+      if (window.HavenPluginLoader) {
+        window.HavenPluginLoader.refresh();
+        this._showToast('Refreshing plugins & themes…', 'info');
       }
     });
 
@@ -2275,6 +2458,19 @@ class HavenApp {
     document.getElementById('bans-modal').addEventListener('click', (e) => {
       if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
     });
+
+    // View all members button (admin)
+    document.getElementById('view-all-members-btn').addEventListener('click', () => {
+      this._openAllMembersModal();
+    });
+    document.getElementById('close-all-members-btn').addEventListener('click', () => {
+      document.getElementById('all-members-modal').style.display = 'none';
+    });
+    document.getElementById('all-members-modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
+    });
+    document.getElementById('all-members-search').addEventListener('input', () => this._filterAllMembers());
+    document.getElementById('all-members-filter').addEventListener('change', () => this._filterAllMembers());
 
     // ── Cleanup controls (admin) — saved via admin Save button ──
     const cleanupAge = document.getElementById('cleanup-max-age');
@@ -4071,6 +4267,29 @@ class HavenApp {
     });
   }
 
+  // ── Font Size Picker ──
+
+  _setupFontSizePicker() {
+    const picker = document.getElementById('font-size-picker');
+    if (!picker) return;
+
+    const saved = localStorage.getItem('haven-fontsize') || 'normal';
+    document.documentElement.dataset.fontsize = saved;
+    picker.querySelectorAll('[data-fontsize]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.fontsize === saved);
+    });
+
+    picker.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-fontsize]');
+      if (!btn) return;
+      const size = btn.dataset.fontsize;
+      document.documentElement.dataset.fontsize = size;
+      localStorage.setItem('haven-fontsize', size);
+      picker.querySelectorAll('[data-fontsize]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  }
+
   // ── Image Display Mode Picker ──
 
   _setupImageModePicker() {
@@ -4199,6 +4418,72 @@ class HavenApp {
 
   _hideImageContextMenu() {
     const existing = document.getElementById('image-context-menu');
+    if (existing) existing.remove();
+  }
+
+  // ── User Context Menu (right-click → invite to channel) ──
+
+  _showUserContextMenu(e, targetUserId) {
+    this._hideUserContextMenu();
+
+    // Build list of non-DM channels the current user is a member of
+    const inviteChannels = (this.channels || []).filter(ch => !ch.is_dm && ch.name);
+    if (inviteChannels.length === 0) return;
+
+    const menu = document.createElement('div');
+    menu.id = 'user-context-menu';
+    menu.className = 'user-context-menu';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'user-ctx-header';
+    header.textContent = 'Invite to Channel';
+    menu.appendChild(header);
+
+    // Channel list
+    for (const ch of inviteChannels) {
+      const btn = document.createElement('button');
+      btn.dataset.channelId = ch.id;
+      btn.textContent = `# ${ch.name}`;
+      btn.title = ch.topic || ch.name;
+      menu.appendChild(btn);
+    }
+
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    document.body.appendChild(menu);
+
+    // Clamp to viewport
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+    if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+
+    menu.addEventListener('click', (ev) => {
+      const channelId = ev.target.dataset.channelId;
+      if (!channelId) return;
+      this.socket.emit('invite-to-channel', {
+        targetUserId,
+        channelId: parseInt(channelId)
+      });
+      this._hideUserContextMenu();
+    });
+
+    // Close on click elsewhere
+    const closer = (ev) => {
+      if (!menu.contains(ev.target)) {
+        this._hideUserContextMenu();
+        document.removeEventListener('click', closer, true);
+        document.removeEventListener('contextmenu', closer, true);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('click', closer, true);
+      document.addEventListener('contextmenu', closer, true);
+    }, 0);
+  }
+
+  _hideUserContextMenu() {
+    const existing = document.getElementById('user-context-menu');
     if (existing) existing.remove();
   }
 
@@ -4661,6 +4946,17 @@ class HavenApp {
     modal.style.display = 'flex';
   }
 
+  /** Decode HTML entities back to raw characters (for legacy DB content) */
+  _decodeHtmlEntities(str) {
+    if (typeof str !== 'string') return '';
+    return str
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+  }
+
   /** Escape HTML entities for safe innerHTML insertion */
   _escapeHtml(str) {
     if (typeof str !== 'string') return '';
@@ -4801,7 +5097,8 @@ class HavenApp {
       const res = await fetch('/api/tunnel/status', {
         headers: { 'Authorization': `Bearer ${this.token}` }
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok && res.status !== 304) throw new Error(`HTTP ${res.status}`);
+      if (res.status === 304) return;  // Not Modified — nothing to update
       const data = await res.json();
       this._updateTunnelStatusUI(data);
       // If still starting, poll again in 2 s
@@ -7034,10 +7331,30 @@ class HavenApp {
       </div>
     `;
 
+    // Hover mode: add translucent class and hover keep-alive
+    if (this._isHoverPopup) {
+      popup.classList.add('profile-popup-hover');
+    }
+
     document.body.appendChild(popup);
 
     // Position near the anchor element
     this._positionProfilePopup(popup);
+
+    // Hover-mode: keep popup open when mouse enters it, close when it leaves
+    if (this._isHoverPopup) {
+      popup.addEventListener('mouseenter', () => {
+        clearTimeout(this._hoverCloseTimer);
+      });
+      popup.addEventListener('mouseleave', (e) => {
+        // If mouse moved back to the trigger, let mouseover handle it
+        if (this._isHoverPopup) {
+          this._hoverCloseTimer = setTimeout(() => {
+            if (this._isHoverPopup) this._closeProfilePopup();
+          }, 200);
+        }
+      });
+    }
 
     // Close button
     popup.querySelector('.profile-popup-close').addEventListener('click', () => this._closeProfilePopup());
@@ -7096,13 +7413,15 @@ class HavenApp {
       });
     }
 
-    // Close on outside click (delay to avoid instant close)
-    setTimeout(() => {
-      this._profilePopupOutsideHandler = (e) => {
-        if (!popup.contains(e.target)) this._closeProfilePopup();
-      };
-      document.addEventListener('click', this._profilePopupOutsideHandler);
-    }, 50);
+    // Close on outside click (delay to avoid instant close) — skip for hover popups
+    if (!this._isHoverPopup) {
+      setTimeout(() => {
+        this._profilePopupOutsideHandler = (e) => {
+          if (!popup.contains(e.target)) this._closeProfilePopup();
+        };
+        document.addEventListener('click', this._profilePopupOutsideHandler);
+      }, 50);
+    }
   }
 
   _positionProfilePopup(popup) {
@@ -7140,6 +7459,9 @@ class HavenApp {
       document.removeEventListener('click', this._profilePopupOutsideHandler);
       this._profilePopupOutsideHandler = null;
     }
+    this._isHoverPopup = false;
+    this._hoverTarget = null;
+    clearTimeout(this._hoverCloseTimer);
   }
 
   _openEditProfileModal(profile) {
@@ -7471,6 +7793,9 @@ class HavenApp {
       document.getElementById('screen-share-btn').textContent = '🖥️';
       document.getElementById('screen-share-btn').title = 'Share Screen';
       document.getElementById('screen-share-btn').classList.remove('sharing');
+      document.getElementById('voice-cam-btn').textContent = '📷';
+      document.getElementById('voice-cam-btn').title = 'Camera';
+      document.getElementById('voice-cam-btn').classList.remove('sharing');
       document.getElementById('voice-ns-slider').value = 10;
       // Hide voice settings sub-panel
       const vsPanel = document.getElementById('voice-settings-panel');
@@ -7482,6 +7807,14 @@ class HavenApp {
       grid.querySelectorAll('video').forEach(v => { v.srcObject = null; });
       grid.innerHTML = '';
       document.getElementById('screen-share-container').style.display = 'none';
+      // Clear all webcam tiles
+      const wcGrid = document.getElementById('webcam-grid');
+      if (wcGrid) {
+        wcGrid.querySelectorAll('video').forEach(v => { v.srcObject = null; });
+        wcGrid.innerHTML = '';
+      }
+      const wcContainer = document.getElementById('webcam-container');
+      if (wcContainer) wcContainer.style.display = 'none';
       this._screenShareMinimized = false;
       this._removeScreenShareIndicator();
       this._hideMusicPanel();
@@ -7545,6 +7878,403 @@ class HavenApp {
       } else {
         this._showToast('Screen share cancelled or not supported', 'error');
       }
+    }
+  }
+
+  async _toggleWebcam() {
+    if (!this.voice.inVoice) return;
+
+    const btn = document.getElementById('voice-cam-btn');
+    if (this.voice.isWebcamActive) {
+      await this.voice.stopWebcam();
+      btn.textContent = '📷';
+      btn.title = 'Camera';
+      btn.classList.remove('sharing');
+      this._handleWebcamStream(this.user.id, null);
+      this._showToast('Camera stopped', 'info');
+    } else {
+      const ok = await this.voice.startWebcam();
+      if (ok) {
+        btn.textContent = '🛑';
+        btn.title = 'Stop Camera';
+        btn.classList.add('sharing');
+        this._handleWebcamStream(this.user.id, this.voice.webcamStream);
+        this._showToast('Camera started', 'success');
+      } else {
+        this._showToast('Camera unavailable or permission denied', 'error');
+      }
+    }
+  }
+
+  _handleWebcamStream(userId, stream) {
+    const container = document.getElementById('webcam-container');
+    const grid = document.getElementById('webcam-grid');
+    const label = document.getElementById('webcam-label');
+
+    if (stream) {
+      const tileId = `webcam-tile-${userId || 'self'}`;
+      let tile = document.getElementById(tileId);
+      if (!tile) {
+        tile = document.createElement('div');
+        tile.id = tileId;
+        tile.className = 'webcam-tile';
+
+        const vid = document.createElement('video');
+        vid.autoplay = true;
+        vid.playsInline = true;
+        vid.muted = (userId === this.user.id); // mute own cam to avoid echo
+        // Mirror own camera (like a mirror), but show others normally
+        if (userId === this.user.id) {
+          vid.style.transform = 'scaleX(-1)';
+        }
+        tile.appendChild(vid);
+
+        const lbl = document.createElement('div');
+        lbl.className = 'webcam-tile-label';
+        const peer = this.voice.peers.get(userId);
+        const who = (userId === null || userId === this.user.id) ? 'You' : (peer ? peer.username : 'Someone');
+        lbl.textContent = who;
+        tile.appendChild(lbl);
+
+        // Double-click to toggle focus mode (expand tile full-size)
+        tile.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          this._toggleWebcamFocus(tile);
+        });
+
+        // Pop-out button (PiP)
+        const popoutBtn = document.createElement('button');
+        popoutBtn.className = 'stream-popout-btn';
+        popoutBtn.title = 'Pop out camera';
+        popoutBtn.textContent = '⧉';
+        popoutBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._popOutWebcam(tile, userId);
+        });
+        tile.appendChild(popoutBtn);
+
+        // Minimize button — collapses tile but keeps in grid
+        const minBtn = document.createElement('button');
+        minBtn.className = 'stream-minimize-btn';
+        minBtn.title = 'Minimize';
+        minBtn.textContent = '─';
+        minBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          tile.classList.toggle('webcam-minimized');
+          const vidEl = tile.querySelector('video');
+          if (tile.classList.contains('webcam-minimized')) {
+            vidEl.style.display = 'none';
+            tile.style.height = '28px';
+            tile.style.minHeight = '0';
+          } else {
+            vidEl.style.display = '';
+            tile.style.height = '';
+            tile.style.minHeight = '';
+          }
+        });
+        tile.appendChild(minBtn);
+
+        // Close button — removes tile entirely
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'stream-close-btn';
+        closeBtn.title = 'Close camera';
+        closeBtn.textContent = '✕';
+        closeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const vidEl = tile.querySelector('video');
+          if (vidEl) vidEl.srcObject = null;
+          tile.remove();
+          this._updateWebcamVisibility();
+
+          // If this is our own camera tile, stop the actual stream and reset
+          // the camera button state so it doesn't still appear active.
+          if (userId === this.user.id) {
+            this.voice.stopWebcam();
+            const btn = document.getElementById('webcam-toggle');
+            if (btn) {
+              btn.textContent = '📷';
+              btn.title = 'Camera';
+              btn.classList.remove('sharing');
+            }
+          }
+        });
+        tile.appendChild(closeBtn);
+
+        grid.appendChild(tile);
+      }
+
+      container.style.display = 'flex';
+
+      const videoEl = tile.querySelector('video');
+      if (videoEl.srcObject === stream) videoEl.srcObject = null;
+      videoEl.srcObject = stream;
+      videoEl.play().catch(() => {});
+      videoEl.onloadedmetadata = () => { videoEl.play().catch(() => {}); };
+
+      // Retry playback for late-arriving tracks
+      let _retries = 0;
+      const _retryPlay = () => {
+        if (!videoEl.srcObject || _retries > 15) return;
+        if (videoEl.videoWidth === 0) {
+          _retries++;
+          if (_retries % 5 === 0) {
+            const s = videoEl.srcObject;
+            videoEl.srcObject = null;
+            videoEl.srcObject = s;
+          }
+          videoEl.play().catch(() => {});
+          setTimeout(_retryPlay, 500);
+        }
+      };
+      setTimeout(_retryPlay, 600);
+
+      // Apply saved webcam size
+      const savedSize = localStorage.getItem('haven_webcam_size');
+      if (savedSize) {
+        const vh = parseInt(savedSize, 10);
+        container.style.maxHeight = vh + 'vh';
+        grid.style.maxHeight = (vh - 2) + 'vh';
+        const tileMaxW = Math.max(vh * 1.33, 15);
+        document.querySelectorAll('.webcam-tile').forEach(t => { t.style.maxWidth = tileMaxW + 'vw'; });
+        document.querySelectorAll('.webcam-tile video').forEach(v => { v.style.maxHeight = (vh - 4) + 'vh'; });
+      }
+
+      this._updateWebcamVisibility();
+    } else {
+      // Stream ended — remove tile
+      const tileId = `webcam-tile-${userId || 'self'}`;
+      const tile = document.getElementById(tileId);
+      if (tile) {
+        const vid = tile.querySelector('video');
+        if (vid) vid.srcObject = null;
+        tile.remove();
+      }
+      // Reset own button if our cam ended externally
+      if (userId === this.user.id || userId === 'self') {
+        const btn = document.getElementById('voice-cam-btn');
+        if (btn) {
+          btn.textContent = '📷';
+          btn.title = 'Camera';
+          btn.classList.remove('sharing');
+        }
+      }
+      // Close any PiP overlay for this user
+      const pipEl = document.getElementById(`webcam-pip-${userId || 'self'}`);
+      if (pipEl) pipEl.remove();
+
+      this._updateWebcamVisibility();
+    }
+  }
+
+  _updateWebcamVisibility() {
+    const container = document.getElementById('webcam-container');
+    const grid = document.getElementById('webcam-grid');
+    const label = document.getElementById('webcam-label');
+    const count = grid.children.length;
+    if (count === 0) {
+      container.style.display = 'none';
+      container.classList.remove('webcam-focus-mode');
+      this._removeWebcamIndicator();
+    } else {
+      label.textContent = `📷 ${count} camera${count !== 1 ? 's' : ''}`;
+    }
+  }
+
+  _showWebcamIndicator(count) {
+    let ind = document.getElementById('webcam-indicator');
+    if (!ind) {
+      ind = document.createElement('button');
+      ind.id = 'webcam-indicator';
+      ind.className = 'screen-share-indicator'; // reuse same styling
+      ind.addEventListener('click', () => {
+        const container = document.getElementById('webcam-container');
+        if (container) {
+          container.style.display = 'flex';
+          // Exit focus mode if it was active
+          container.classList.remove('webcam-focus-mode');
+          const grid = document.getElementById('webcam-grid');
+          if (grid) grid.querySelectorAll('.webcam-tile').forEach(t => t.classList.remove('webcam-focused'));
+          // Re-apply saved size
+          const saved = localStorage.getItem('haven_webcam_size') || '25';
+          const vh = parseInt(saved, 10);
+          container.style.maxHeight = vh + 'vh';
+          grid.style.maxHeight = (vh - 2) + 'vh';
+          const tileMaxW = Math.max(vh * 1.33, 15);
+          document.querySelectorAll('.webcam-tile').forEach(t => { t.style.maxWidth = tileMaxW + 'vw'; });
+          document.querySelectorAll('.webcam-tile video').forEach(v => { v.style.maxHeight = (vh - 4) + 'vh'; });
+        }
+        ind.remove();
+      });
+      document.querySelector('.channel-header')?.appendChild(ind);
+    }
+    ind.textContent = `📷 ${count} camera${count > 1 ? 's' : ''} hidden`;
+  }
+
+  _removeWebcamIndicator() {
+    document.getElementById('webcam-indicator')?.remove();
+  }
+
+  _closeWebcam() {
+    // If user is actively sharing their webcam, stop it
+    if (this.voice && this.voice.isWebcamActive) {
+      this._toggleWebcam();
+    }
+    const container = document.getElementById('webcam-container');
+    const grid = document.getElementById('webcam-grid');
+    // Remove all tiles
+    if (grid) {
+      grid.querySelectorAll('.webcam-tile').forEach(t => {
+        const vid = t.querySelector('video');
+        if (vid) vid.srcObject = null;
+        t.remove();
+      });
+    }
+    // Remove any PiP overlays
+    document.querySelectorAll('.webcam-pip-overlay').forEach(p => p.remove());
+    container.style.display = 'none';
+    container.classList.remove('webcam-focus-mode');
+    this._removeWebcamIndicator();
+  }
+
+  _toggleWebcamFocus(tile) {
+    const container = document.getElementById('webcam-container');
+    const grid = document.getElementById('webcam-grid');
+    const wasFocused = tile.classList.contains('webcam-focused');
+
+    // Don't allow focus on minimized tiles
+    if (tile.classList.contains('webcam-minimized')) return;
+
+    // Remove focus from all tiles first
+    grid.querySelectorAll('.webcam-tile').forEach(t => t.classList.remove('webcam-focused'));
+    container.classList.remove('webcam-focus-mode');
+
+    if (!wasFocused) {
+      tile.classList.add('webcam-focused');
+      container.classList.add('webcam-focus-mode');
+      // Clear ALL inline size constraints so pure CSS focus mode takes over
+      container.style.maxHeight = '';
+      container.style.minHeight = '';
+      grid.style.maxHeight = '';
+      tile.style.maxWidth = '';
+      const vid = tile.querySelector('video');
+      if (vid) vid.style.maxHeight = '';
+    } else {
+      // Restore slider-based size
+      const saved = localStorage.getItem('haven_webcam_size') || '25';
+      const vh = parseInt(saved, 10);
+      container.style.maxHeight = vh + 'vh';
+      grid.style.maxHeight = (vh - 2) + 'vh';
+      const tileMaxW = Math.max(vh * 1.33, 15);
+      document.querySelectorAll('.webcam-tile').forEach(t => { t.style.maxWidth = tileMaxW + 'vw'; });
+      document.querySelectorAll('.webcam-tile video').forEach(v => { v.style.maxHeight = (vh - 4) + 'vh'; });
+    }
+  }
+
+  _popOutWebcam(tile, userId) {
+    const video = tile.querySelector('video');
+    if (!video || !video.srcObject) return;
+
+    // If already in PiP, exit it
+    if (document.pictureInPictureElement === video) {
+      document.exitPictureInPicture().catch(() => {});
+      return;
+    }
+
+    if (tile.classList.contains('webcam-popped-out')) return;
+
+    // Try native Picture-in-Picture first
+    if (document.pictureInPictureEnabled && !video.disablePictureInPicture) {
+      video.requestPictureInPicture().then(() => {
+        const popoutBtn = tile.querySelector('.stream-popout-btn');
+        if (popoutBtn) { popoutBtn.textContent = '⧈'; popoutBtn.title = 'Pop in camera'; }
+        tile.classList.add('webcam-popped-out');
+
+        video.addEventListener('leavepictureinpicture', () => {
+          if (popoutBtn) { popoutBtn.textContent = '⧉'; popoutBtn.title = 'Pop out camera'; }
+          tile.classList.remove('webcam-popped-out');
+        }, { once: true });
+      }).catch(() => {
+        this._popOutWebcamOverlay(tile, userId);
+      });
+    } else {
+      this._popOutWebcamOverlay(tile, userId);
+    }
+  }
+
+  _popOutWebcamOverlay(tile, userId) {
+    const video = tile.querySelector('video');
+    if (!video || !video.srcObject) return;
+
+    const stream = video.srcObject;
+    const peer = this.voice.peers.get(userId);
+    const who = userId === null || userId === this.user.id ? 'You' : (peer ? peer.username : 'Camera');
+
+    const pipId = `webcam-pip-${userId || 'self'}`;
+    if (document.getElementById(pipId)) return;
+
+    const savedOpacity = parseInt(localStorage.getItem('haven_pip_opacity') ?? '100');
+    const pip = document.createElement('div');
+    pip.id = pipId;
+    pip.className = 'music-pip-overlay webcam-pip-overlay';
+    pip.style.opacity = savedOpacity / 100;
+
+    pip.innerHTML = `
+      <div class="music-pip-embed stream-pip-video"></div>
+      <div class="music-pip-controls">
+        <button class="music-pip-btn stream-pip-popin" title="Pop back in">⧈</button>
+        <span class="music-pip-label">📷 ${who}</span>
+        <span class="music-pip-vol-icon" title="Window opacity">👁</span>
+        <input type="range" class="music-pip-vol pip-opacity-slider" min="20" max="100" value="${savedOpacity}">
+        <button class="music-pip-btn stream-pip-close" title="Close">✕</button>
+      </div>
+    `;
+
+    document.body.appendChild(pip);
+
+    const pipVideo = document.createElement('video');
+    pipVideo.autoplay = true;
+    pipVideo.playsInline = true;
+    pipVideo.muted = true;
+    pipVideo.srcObject = stream;
+    const mirrorCss = (userId === this.user.id) ? 'transform:scaleX(-1);' : '';
+    pipVideo.style.cssText = `width:100%;height:100%;object-fit:cover;display:block;${mirrorCss}`;
+    pip.querySelector('.stream-pip-video').appendChild(pipVideo);
+    pipVideo.play().catch(() => {});
+
+    const popoutBtn = tile.querySelector('.stream-popout-btn');
+    if (popoutBtn) { popoutBtn.textContent = '⧈'; popoutBtn.title = 'Pop in camera'; }
+    tile.classList.add('webcam-popped-out');
+
+    const popIn = () => {
+      pip.remove();
+      if (popoutBtn) { popoutBtn.textContent = '⧉'; popoutBtn.title = 'Pop out camera'; }
+      tile.classList.remove('webcam-popped-out');
+    };
+
+    const closePip = () => {
+      pip.remove();
+      if (popoutBtn) { popoutBtn.textContent = '⧉'; popoutBtn.title = 'Pop out camera'; }
+      tile.classList.remove('webcam-popped-out');
+    };
+
+    pip.querySelector('.stream-pip-popin').addEventListener('click', popIn);
+    pip.querySelector('.stream-pip-close').addEventListener('click', closePip);
+
+    pip.querySelector('.pip-opacity-slider').addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      pip.style.opacity = val / 100;
+      localStorage.setItem('haven_pip_opacity', val);
+    });
+
+    this._initPipDrag(pip, pip);
+
+    const streamTrack = stream.getVideoTracks()[0];
+    if (streamTrack) {
+      const prevOnEnded = streamTrack.onended;
+      streamTrack.onended = () => {
+        if (prevOnEnded) prevOnEnded();
+        popIn();
+      };
     }
   }
 
@@ -7669,14 +8399,27 @@ class HavenApp {
         });
         tile.appendChild(minBtn);
 
-        // Close button — hides tile AND mutes its audio
+        // Close button — removes tile entirely and mutes its audio
         const closeBtn = document.createElement('button');
         closeBtn.className = 'stream-close-btn';
         closeBtn.title = 'Close (stop audio)';
         closeBtn.textContent = '✕';
         closeBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          this._hideStreamTile(tile, userId, who, true);
+          // Mute and clean up audio
+          if (userId) this.voice.setStreamVolume(userId, 0);
+          const audioEl = document.getElementById(`voice-audio-screen-${userId}`);
+          if (audioEl) { audioEl.volume = 0; try { audioEl.pause(); } catch {} }
+          // Notify server we stopped watching
+          if (this.voice && this.voice.inVoice && userId && userId !== this.user.id) {
+            this.socket.emit('stream-unwatch', { code: this.voice.currentChannel, sharerId: userId });
+          }
+          // Remove tile from DOM
+          const vid = tile.querySelector('video');
+          if (vid) vid.srcObject = null;
+          tile.remove();
+          this._updateHiddenStreamsBar();
+          this._updateScreenShareVisibility();
         });
         tile.appendChild(closeBtn);
 
@@ -7864,6 +8607,15 @@ class HavenApp {
     else if (mode === 'side-by-side') grid.classList.add('layout-side-by-side');
     else if (mode === 'grid-2x2') grid.classList.add('layout-grid-2x2');
     // 'auto' = no extra class, default CSS applies
+  }
+
+  _applyWebcamLayout(mode) {
+    const grid = document.getElementById('webcam-grid');
+    if (!grid) return;
+    grid.classList.remove('layout-vertical', 'layout-side-by-side', 'layout-grid-2x2');
+    if (mode === 'vertical') grid.classList.add('layout-vertical');
+    else if (mode === 'side-by-side') grid.classList.add('layout-side-by-side');
+    else if (mode === 'grid-2x2') grid.classList.add('layout-grid-2x2');
   }
 
   _updateScreenShareVisibility() {
@@ -8061,32 +8813,26 @@ class HavenApp {
     const grid = document.getElementById('screen-share-grid');
     const tiles = grid ? grid.querySelectorAll('.screen-share-tile') : [];
 
-    // Mute all remote stream audio when closing the container
+    // Mute all remote stream audio and fully remove tiles
     tiles.forEach(t => {
       const uid = t.id.replace('screen-tile-', '');
-      t.dataset.muted = 'true';
       this.voice.setStreamVolume(uid, 0);
+      const audioEl = document.getElementById(`voice-audio-screen-${uid}`);
+      if (audioEl) { audioEl.volume = 0; try { audioEl.pause(); } catch {} }
       // Notify server we stopped watching
       if (this.voice && this.voice.inVoice && uid !== String(this.user.id)) {
         this.socket.emit('stream-unwatch', { code: this.voice.currentChannel, sharerId: parseInt(uid) || uid });
       }
+      const vid = t.querySelector('video');
+      if (vid) vid.srcObject = null;
+      t.remove();
     });
 
     container.style.display = 'none';
     container.classList.remove('stream-focus-mode');
-    this._screenShareMinimized = true;
-
-    // If there are still active streams running, show the indicator so user can reopen
-    if (tiles.length > 0) {
-      // Mark them hidden so restore works
-      tiles.forEach(t => { t.style.display = 'none'; t.dataset.hidden = 'true'; });
-      // Remove any existing hidden-streams-bar to avoid duplicates
-      document.getElementById('hidden-streams-bar')?.remove();
-      this._showScreenShareIndicator(tiles.length);
-    } else {
-      this._screenShareMinimized = false;
-      this._removeScreenShareIndicator();
-    }
+    this._screenShareMinimized = false;
+    this._removeScreenShareIndicator();
+    document.getElementById('hidden-streams-bar')?.remove();
   }
 
   // ── Screen Share Audio ──────────────────────────────
@@ -9190,6 +9936,11 @@ class HavenApp {
   }
 
   _formatContent(str) {
+    // Decode legacy HTML entities from old server-side sanitization.
+    // The server no longer entity-encodes, but older messages in the DB
+    // may still contain entities like &#39; &amp; &lt; etc.
+    str = this._decodeHtmlEntities(str);
+
     // Render file attachments [file:name](url|size)
     const fileMatch = str.match(/^\[file:(.+?)\]\((.+?)\|(.+?)\)$/);
     if (fileMatch) {
@@ -11023,6 +11774,102 @@ class HavenApp {
   }
 
   // ═══════════════════════════════════════════════════════
+  // ADMIN MEMBER LIST
+  // ═══════════════════════════════════════════════════════
+
+  _openAllMembersModal() {
+    const modal = document.getElementById('all-members-modal');
+    const list = document.getElementById('all-members-list');
+    list.innerHTML = '<p class="muted-text" style="text-align:center;padding:20px">Loading...</p>';
+    document.getElementById('all-members-search').value = '';
+    document.getElementById('all-members-filter').value = 'all';
+    document.getElementById('all-members-count').textContent = '';
+    modal.style.display = 'flex';
+
+    this.socket.emit('get-all-members', {}, (res) => {
+      if (res.error) {
+        list.innerHTML = `<p class="muted-text" style="text-align:center;padding:20px">${this._escapeHtml(res.error)}</p>`;
+        return;
+      }
+      this._allMembersData = res.members || [];
+      document.getElementById('all-members-count').textContent = `(${res.total})`;
+      this._renderAllMembers(this._allMembersData);
+    });
+  }
+
+  _filterAllMembers() {
+    if (!this._allMembersData) return;
+    const query = (document.getElementById('all-members-search').value || '').toLowerCase().trim();
+    const filter = document.getElementById('all-members-filter').value;
+    const now = Date.now();
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+
+    let filtered = this._allMembersData;
+    if (filter === 'online') filtered = filtered.filter(m => m.online && !m.banned);
+    else if (filter === 'offline') filtered = filtered.filter(m => !m.online && !m.banned);
+    else if (filter === 'new') filtered = filtered.filter(m => m.createdAt && (now - new Date(m.createdAt).getTime()) < sevenDays);
+    else if (filter === 'banned') filtered = filtered.filter(m => m.banned);
+
+    if (query) {
+      filtered = filtered.filter(m =>
+        m.username.toLowerCase().includes(query) ||
+        m.displayName.toLowerCase().includes(query) ||
+        m.roles.some(r => r.name.toLowerCase().includes(query))
+      );
+    }
+
+    document.getElementById('all-members-count').textContent = `(${filtered.length}/${this._allMembersData.length})`;
+    this._renderAllMembers(filtered);
+  }
+
+  _renderAllMembers(members) {
+    const list = document.getElementById('all-members-list');
+    if (!members || members.length === 0) {
+      list.innerHTML = '<p class="muted-text" style="text-align:center;padding:20px">No members found</p>';
+      return;
+    }
+
+    list.innerHTML = members.map(m => {
+      const rolesHtml = m.roles.map(r =>
+        `<span class="aml-role-badge" style="border-color:${this._safeColor(r.color, '#888')};color:${this._safeColor(r.color, '#888')}">${this._escapeHtml(r.name)}</span>`
+      ).join('');
+      const adminBadge = m.isAdmin ? '<span class="aml-admin-badge">Admin</span>' : '';
+      const bannedBadge = m.banned ? '<span class="aml-banned-badge">Banned</span>' : '';
+      const onlineDot = m.online && !m.banned ? 'aml-online' : 'aml-offline';
+      const created = m.createdAt ? new Date(m.createdAt.endsWith('Z') ? m.createdAt : m.createdAt + 'Z') : null;
+      const joinedStr = created ? created.toLocaleDateString() : '';
+      const isNew = created && (Date.now() - created.getTime()) < 7 * 24 * 60 * 60 * 1000;
+      const newBadge = isNew ? '<span class="aml-new-badge">New</span>' : '';
+
+      const avatarUrl = m.avatar ? m.avatar : '';
+      const avatarShape = m.avatarShape === 'square' ? 'border-radius:4px' : 'border-radius:50%';
+      const avatarHtml = avatarUrl
+        ? `<img src="${this._escapeHtml(avatarUrl)}" class="aml-avatar" style="${avatarShape}" alt="">`
+        : `<div class="aml-avatar aml-avatar-default" style="${avatarShape}">${this._escapeHtml(m.displayName.charAt(0).toUpperCase())}</div>`;
+
+      return `<div class="aml-member-row">
+        <div class="aml-member-left">
+          <div class="aml-avatar-wrap">
+            ${avatarHtml}
+            <span class="aml-status-dot ${onlineDot}"></span>
+          </div>
+          <div class="aml-member-info">
+            <div class="aml-member-name">
+              ${this._escapeHtml(m.displayName)}${m.username !== m.displayName ? ` <span class="aml-login-name">@${this._escapeHtml(m.username)}</span>` : ''}
+              ${adminBadge}${bannedBadge}${newBadge}
+            </div>
+            <div class="aml-member-meta">
+              ${rolesHtml}
+              <span class="aml-member-joined">${joinedStr ? 'Joined ' + joinedStr : ''}</span>
+              ${m.channels > 0 ? `<span class="aml-member-channels">${m.channels} ch</span>` : ''}
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ═══════════════════════════════════════════════════════
   // @MENTION AUTOCOMPLETE
   // ═══════════════════════════════════════════════════════
 
@@ -12465,6 +13312,11 @@ class HavenApp {
           });
         }
 
+        // Reset button BEFORE re-render (re-render clones the button,
+        // so the clone must inherit the clean state, not "Saving...").
+        freshSaveBtn.disabled = false;
+        freshSaveBtn.textContent = 'Save';
+
         // Use server-returned roles directly (no re-fetch needed)
         if (res.roles) {
           this._allRoles = res.roles;
@@ -12477,8 +13329,6 @@ class HavenApp {
           this._loadRoles();
         }
         this._showToast('Role saved', 'success');
-        freshSaveBtn.disabled = false;
-        freshSaveBtn.textContent = 'Save';
       });
     });
 
@@ -12959,6 +13809,90 @@ class HavenApp {
       if (rv < lv) return false;
     }
     return false;
+  }
+
+  // ── Desktop App Banner + Promo Popup ────────────────────
+  /** Show the "Get the Desktop App" banner and promo popup unless the user
+   *  dismissed them or is already running inside Haven Desktop (Electron). */
+  _initDesktopAppBanner() {
+    // Don't show if already in the desktop app
+    if (window.havenDesktop || navigator.userAgent.includes('Electron')) return;
+
+    // ── Top-bar banner ──
+    const bannerDismissed = localStorage.getItem('haven_desktop_banner_dismissed');
+    if (!bannerDismissed) {
+      const banner = document.getElementById('desktop-app-banner');
+      if (banner) {
+        banner.style.display = 'inline-flex';
+        const dismissBtn = document.getElementById('desktop-app-dismiss');
+        if (dismissBtn) {
+          dismissBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            banner.style.display = 'none';
+            localStorage.setItem('haven_desktop_banner_dismissed', '1');
+          });
+        }
+      }
+    }
+
+    // ── Promo popup (centred modal) ──
+    if (localStorage.getItem('haven_desktop_promo_dismissed')) return;
+
+    const modal = document.getElementById('desktop-promo-modal');
+    if (!modal) return;
+
+    // Detect platform for meta line
+    const meta = document.getElementById('desktop-promo-meta');
+    if (meta) {
+      const ua = navigator.userAgent.toLowerCase();
+      let platform = 'Desktop';
+      if (ua.includes('win')) platform = 'Windows Installer';
+      else if (ua.includes('linux')) platform = 'Linux Installer';
+      else if (ua.includes('mac')) platform = 'macOS Installer';
+      meta.textContent = `${platform} \u2022 v1.0.0`;
+    }
+
+    // Show after a short delay so the app finishes loading first
+    setTimeout(() => { modal.style.display = 'flex'; }, 1200);
+
+    // "Maybe later" closes without remembering
+    const laterBtn = document.getElementById('desktop-promo-later');
+    if (laterBtn) {
+      laterBtn.addEventListener('click', () => {
+        const check = document.getElementById('desktop-promo-dismiss-check');
+        if (check && check.checked) {
+          localStorage.setItem('haven_desktop_promo_dismissed', '1');
+          // Also dismiss the banner if they chose "don't show again"
+          localStorage.setItem('haven_desktop_banner_dismissed', '1');
+          const banner = document.getElementById('desktop-app-banner');
+          if (banner) banner.style.display = 'none';
+        }
+        modal.style.display = 'none';
+      });
+    }
+
+    // "Install Haven" link — if checkbox checked, remember dismissal
+    const installBtn = document.getElementById('desktop-promo-install');
+    if (installBtn) {
+      installBtn.addEventListener('click', () => {
+        const check = document.getElementById('desktop-promo-dismiss-check');
+        if (check && check.checked) {
+          localStorage.setItem('haven_desktop_promo_dismissed', '1');
+          localStorage.setItem('haven_desktop_banner_dismissed', '1');
+          const banner = document.getElementById('desktop-app-banner');
+          if (banner) banner.style.display = 'none';
+        }
+        modal.style.display = 'none';
+      });
+    }
+
+    // Close on overlay click
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.style.display = 'none';
+      }
+    });
   }
 
   /* ── E2E Encryption Helpers ──────────────────────────── */

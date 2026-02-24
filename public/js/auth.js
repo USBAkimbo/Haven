@@ -151,7 +151,7 @@
 
     if (!username || !password || !confirm) return showError('Fill in all fields');
     if (password !== confirm) return showError('Passwords do not match');
-    if (password.length < 6) return showError('Password must be at least 6 characters');
+    if (password.length < 8) return showError('Password must be at least 8 characters');
 
     try {
       const res = await fetch('/api/auth/register', {

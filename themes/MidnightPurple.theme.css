@@ -1,0 +1,31 @@
+/**
+ * @name Midnight Purple
+ * @description A deep purple dark theme with neon accents
+ * @author Haven
+ * @version 1.0.0
+ */
+
+:root {
+  --bg-primary: #0d0a1a !important;
+  --bg-secondary: #140f29 !important;
+  --bg-tertiary: #1a1433 !important;
+  --bg-input: #1a1433 !important;
+  --bg-hover: rgba(138, 92, 246, 0.12) !important;
+  --text-primary: #e8e0f0 !important;
+  --text-secondary: #a899c4 !important;
+  --text-muted: #6b5a8a !important;
+  --accent: #8a5cf6 !important;
+  --accent-hover: #7c4deb !important;
+  --border: rgba(138, 92, 246, 0.15) !important;
+  --success: #4ade80 !important;
+  --danger: #f43f5e !important;
+  --warning: #fbbf24 !important;
+}
+
+/* Scrollbar tint */
+::-webkit-scrollbar-thumb {
+  background: rgba(138, 92, 246, 0.3) !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(138, 92, 246, 0.5) !important;
+}

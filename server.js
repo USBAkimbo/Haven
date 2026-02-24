@@ -75,11 +75,11 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'wasm-unsafe-eval'", "https://www.youtube.com", "https://w.soundcloud.com", "https://unpkg.com"],
-      styleSrc: ["'self'", "'unsafe-inline'"],  // inline styles needed for themes
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],  // inline styles + Google Fonts
       imgSrc: ["'self'", "data:", "blob:", "https:"],  // https: for link preview OG images + GIPHY
       connectSrc: ["'self'", "ws:", "wss:", "https:"],  // Socket.IO + cross-origin health checks
       mediaSrc: ["'self'", "blob:", "data:"],  // WebRTC audio + notification sounds
-      fontSrc: ["'self'"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],  // Google Fonts CDN
       workerSrc: ["'self'", "blob:", "https://unpkg.com"],  // service worker + Ruffle WebAssembly workers
       objectSrc: ["'none'"],
       frameSrc: ["'self'", "https://open.spotify.com", "https://www.youtube.com", "https://www.youtube-nocookie.com", "https://w.soundcloud.com"],  // Listen Together embeds + game iframes
@@ -128,6 +128,66 @@ app.use('/uploads', express.static(UPLOADS_DIR, {
     }
   }
 }));
+
+// ── Plugin & Theme file serving ─────────────────────────
+const PLUGINS_DIR = path.join(__dirname, 'plugins');
+const THEMES_DIR  = path.join(__dirname, 'themes');
+if (!fs.existsSync(PLUGINS_DIR)) fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+if (!fs.existsSync(THEMES_DIR))  fs.mkdirSync(THEMES_DIR, { recursive: true });
+
+app.use('/plugins', express.static(PLUGINS_DIR, { dotfiles: 'deny', maxAge: 0 }));
+app.use('/themes',  express.static(THEMES_DIR,  { dotfiles: 'deny', maxAge: 0 }));
+
+// API: list available plugins (*.plugin.js files)
+app.get('/api/plugins', (req, res) => {
+  try {
+    const files = fs.readdirSync(PLUGINS_DIR).filter(f => f.endsWith('.plugin.js'));
+    const plugins = files.map(f => {
+      // Try to read metadata from the first comment block
+      const content = fs.readFileSync(path.join(PLUGINS_DIR, f), 'utf8');
+      const meta = {};
+      const metaMatch = content.match(/\/\*\*[\s\S]*?\*\//);
+      if (metaMatch) {
+        const block = metaMatch[0];
+        const nameM = block.match(/@name\s+(.+)/);
+        const descM = block.match(/@description\s+(.+)/);
+        const authM = block.match(/@author\s+(.+)/);
+        const verM  = block.match(/@version\s+(.+)/);
+        if (nameM) meta.name = nameM[1].trim();
+        if (descM) meta.description = descM[1].trim();
+        if (authM) meta.author = authM[1].trim();
+        if (verM)  meta.version = verM[1].trim();
+      }
+      return { file: f, ...meta };
+    });
+    res.json(plugins);
+  } catch { res.json([]); }
+});
+
+// API: list available themes (*.theme.css files)
+app.get('/api/themes', (req, res) => {
+  try {
+    const files = fs.readdirSync(THEMES_DIR).filter(f => f.endsWith('.theme.css'));
+    const themes = files.map(f => {
+      const content = fs.readFileSync(path.join(THEMES_DIR, f), 'utf8');
+      const meta = {};
+      const metaMatch = content.match(/\/\*\*[\s\S]*?\*\//);
+      if (metaMatch) {
+        const block = metaMatch[0];
+        const nameM = block.match(/@name\s+(.+)/);
+        const descM = block.match(/@description\s+(.+)/);
+        const authM = block.match(/@author\s+(.+)/);
+        const verM  = block.match(/@version\s+(.+)/);
+        if (nameM) meta.name = nameM[1].trim();
+        if (descM) meta.description = descM[1].trim();
+        if (authM) meta.author = authM[1].trim();
+        if (verM)  meta.version = verM[1].trim();
+      }
+      return { file: f, ...meta };
+    });
+    res.json(themes);
+  } catch { res.json([]); }
+});
 
 // ── File uploads (DB-configurable limit, avatar max 5 MB) ──
 const uploadDir = UPLOADS_DIR;
@@ -1540,7 +1600,7 @@ app.post('/api/import/discord/fetch', express.json(), async (req, res) => {
 });
 
 // ── Periodic cleanup of orphaned import temp files (1 hour TTL) ──
-setInterval(() => {
+function cleanupTempImports() {
   try {
     const tmpDir = os.tmpdir();
     const cutoff = Date.now() - 60 * 60 * 1000; // 1 hour
@@ -1553,7 +1613,10 @@ setInterval(() => {
       } catch {}
     }
   } catch {}
-}, 15 * 60 * 1000); // check every 15 min
+}
+// Run once at startup to clean up any stale files from previous crashes
+cleanupTempImports();
+setInterval(cleanupTempImports, 15 * 60 * 1000); // then every 15 min
 
 // ── Step 2: Execute the import ───────────────────────────
 app.post('/api/import/discord/execute', express.json({ limit: '1mb' }), (req, res) => {
@@ -1784,6 +1847,7 @@ const io = new Server(server, {
 
 // Initialize
 const db = initDatabase();
+app.set('io', io);   // expose to auth routes (session invalidation on password change)
 setupSocketHandlers(io, db);
 registerProcessCleanup();
 
@@ -1829,10 +1893,15 @@ function runAutoCleanup() {
           'SELECT id FROM messages WHERE is_archived = 0 ORDER BY created_at ASC LIMIT ?'
         ).all(deleteCount).map(r => r.id);
         if (oldestIds.length > 0) {
-          const placeholders = oldestIds.map(() => '?').join(',');
-          db.prepare(`DELETE FROM reactions WHERE message_id IN (${placeholders})`).run(...oldestIds);
-          const result = db.prepare(`DELETE FROM messages WHERE id IN (${placeholders})`).run(...oldestIds);
-          totalDeleted += result.changes;
+          // Chunk deletes to avoid creating extremely long SQL statements
+          const CHUNK_SIZE = 1000;
+          for (let i = 0; i < oldestIds.length; i += CHUNK_SIZE) {
+            const chunk = oldestIds.slice(i, i + CHUNK_SIZE);
+            const placeholders = chunk.map(() => '?').join(',');
+            db.prepare(`DELETE FROM reactions WHERE message_id IN (${placeholders})`).run(...chunk);
+            db.prepare(`DELETE FROM messages WHERE id IN (${placeholders})`).run(...chunk);
+          }
+          totalDeleted += oldestIds.length;
         }
       }
     }

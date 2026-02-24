@@ -229,6 +229,48 @@
       .discord-feat { font-size: 0.8rem; padding: 6px 14px; }
     }
 
+    /* ============================================
+       DESKTOP APP BANNER
+       ============================================ */
+    .desktop-banner {
+      background: linear-gradient(135deg, #7c5cfc 0%, #43b581 50%, #82aaff 100%);
+      padding: 2px;
+      position: relative;
+    }
+    .desktop-banner-inner {
+      background: var(--bg-deep);
+      padding: 64px 24px;
+      text-align: center;
+    }
+    .desktop-banner h2 {
+      color: #fff;
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
+      margin-bottom: 16px;
+    }
+    .desktop-banner .desktop-accent { color: var(--accent-bright); }
+    .desktop-banner p {
+      color: var(--text-muted);
+      font-size: 1.15rem;
+      max-width: 700px;
+      margin: 0 auto 32px;
+      line-height: 1.7;
+    }
+    .beta-badge-inline {
+      display: inline-block;
+      background: rgba(250, 166, 26, 0.2);
+      color: var(--warning);
+      font-size: 0.55em;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 6px;
+      border: 1px solid rgba(250, 166, 26, 0.4);
+      vertical-align: middle;
+      letter-spacing: 0.08em;
+    }
+    @media (max-width: 768px) {
+      .desktop-banner-inner { padding: 40px 16px; }
+    }
+
     .hero-screenshot {
       position: relative; z-index: 2; max-width: 1000px; margin: 0 auto;
       border-radius: var(--radius-lg); overflow: hidden;
@@ -675,6 +717,7 @@
         <li><a href="#screenshots">Screenshots</a></li>
         <li><a href="#compare">Compare</a></li>
         <li><a href="#download">Download</a></li>
+        <li><a href="#desktop">Desktop App</a></li>
         <li><a href="#support">Support</a></li>
         <li><a href="https://github.com/ancsemi/Haven" target="_blank" class="nav-cta">GitHub</a></li>
       </ul>
@@ -745,6 +788,38 @@
           <span class="discord-feat">🖼️ Avatars</span>
           <span class="discord-feat">↩️ Replies</span>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== DESKTOP APP BANNER ===== -->
+  <section class="desktop-banner fade-in" id="desktop">
+    <div class="desktop-banner-inner">
+      <div class="container">
+        <h2>🖥️ NEW &mdash; <span class="desktop-accent">Haven Desktop</span> <span class="beta-badge-inline">BETA</span></h2>
+        <p>
+          A native desktop app that connects to any Haven server &mdash; with features that go beyond the browser.
+          Per-app audio sharing, device switching mid-call, native notifications, system tray, and a one-click installer.
+        </p>
+        <div class="discord-features">
+          <span class="discord-feat">🎵 Per-App Audio</span>
+          <span class="discord-feat">🎧 Device Switching</span>
+          <span class="discord-feat">🔔 Native Notifications</span>
+          <span class="discord-feat">📌 System Tray</span>
+          <span class="discord-feat">⚡ One-Click Install</span>
+          <span class="discord-feat">🖥️ Windows &amp; Linux</span>
+        </div>
+        <div style="margin-top: 28px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+          <a href="https://github.com/ancsemi/Haven-Desktop/releases/latest" class="btn btn-primary" style="padding: 12px 28px; font-size: 1rem;">
+            <span class="icon">⬇</span> Download Desktop Beta
+          </a>
+          <a href="https://github.com/ancsemi/Haven-Desktop" target="_blank" class="btn btn-secondary" style="padding: 12px 28px; font-size: 1rem;">
+            <span class="icon">&#9965;</span> View on GitHub
+          </a>
+        </div>
+        <p style="margin-top: 16px; font-size: 0.85rem; color: var(--text-dim);">
+          ⚠️ Beta release &mdash; feedback &amp; bug reports are greatly appreciated. <strong>Requires a <a href="https://github.com/ancsemi/Haven" style="color: var(--accent-bright);">Haven server</a></strong> to connect to.
+        </p>
       </div>
     </div>
   </section>
@@ -1163,12 +1238,12 @@
       </div>
 
       <div class="download-card fade-in">
-        <h2>Haven v2.2.5</h2>
+        <h2>⬡ Haven Server &mdash; v2.3.0</h2>
         <p class="download-version">Latest stable release &middot; Windows, macOS &amp; Linux &middot; ~5 MB</p>
 
         <div class="download-btn-group">
-          <a href="https://github.com/ancsemi/Haven/archive/refs/tags/v2.2.5.zip" class="btn btn-primary download-main">
-            <span class="icon">⬇</span> Download v2.2.5 (.zip)
+          <a href="https://github.com/ancsemi/Haven/archive/refs/tags/v2.3.0.zip" class="btn btn-primary download-main">
+            <span class="icon">⬇</span> Download v2.3.0 (.zip)
           </a>
           <div class="download-alt-links">
             <a href="https://github.com/ancsemi/Haven" target="_blank">&#9965; View on GitHub</a>
@@ -1185,7 +1260,11 @@
           <div class="version-list">
             <div class="version-list-inner">
               <div class="version-item">
-                <div><span class="v-name">v2.2.5</span><span class="v-tag latest">Latest</span></div>
+                <div><span class="v-name">v2.3.0</span><span class="v-tag latest">Latest</span></div>
+                <a href="https://github.com/ancsemi/Haven/archive/refs/tags/v2.3.0.zip">Download &rarr;</a>
+              </div>
+              <div class="version-item">
+                <div><span class="v-name">v2.2.5</span> &mdash; Security fixes, desktop code removed</div>
                 <a href="https://github.com/ancsemi/Haven/archive/refs/tags/v2.2.5.zip">Download &rarr;</a>
               </div>
               <div class="version-item">
@@ -1301,6 +1380,29 @@
         </div>
       </div>
 
+      <!-- Desktop App Download Card -->
+      <div class="download-card fade-in" style="margin-top: 32px; border-color: rgba(250, 166, 26, 0.25);">
+        <div style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent-dim), var(--warning), var(--green)); box-shadow: 0 0 12px rgba(250, 166, 26, 0.3);"></div>
+        <h2>🖥️ Haven Desktop <span class="beta-badge-inline">BETA</span></h2>
+        <p class="download-version">First beta release &middot; Windows &amp; Linux &middot; Standalone installer</p>
+
+        <div class="download-btn-group">
+          <a href="https://github.com/ancsemi/Haven-Desktop/releases/latest" class="btn btn-primary download-main" style="background: var(--warning); box-shadow: 0 4px 24px rgba(250, 166, 26, 0.25), 0 0 0 1px rgba(250, 166, 26, 0.3);">
+            <span class="icon">⬇</span> Download Desktop Beta
+          </a>
+          <div class="download-alt-links">
+            <a href="https://github.com/ancsemi/Haven-Desktop" target="_blank">&#9965; View on GitHub</a>
+            <a href="https://github.com/ancsemi/Haven-Desktop/blob/main/README.md" target="_blank">📖 README</a>
+            <a href="https://github.com/ancsemi/Haven-Desktop/issues" target="_blank">🐛 Report a Bug</a>
+          </div>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-dim); margin-top: 16px;">
+          ⚠️ <strong>Beta software</strong> &mdash; feedback &amp; bug reports are greatly appreciated.<br>
+          The desktop app is a client. You still need a <a href="https://github.com/ancsemi/Haven" style="color: var(--accent-bright);">Haven server</a> to connect to.
+        </p>
+      </div>
+
       <div class="setup-steps stagger" style="margin-top: 48px;">
         <div class="setup-step">
           <div class="s-num">1</div>
@@ -1355,7 +1457,8 @@
       <div class="footer-brand"><span class="hex">⬡</span> HAVEN</div>
       <p>Your server. Your rules. No cloud. No one reading your messages.</p>
       <ul class="footer-links">
-        <li><a href="https://github.com/ancsemi/Haven" target="_blank">GitHub</a></li>
+        <li><a href="https://github.com/ancsemi/Haven" target="_blank">GitHub (Server)</a></li>
+        <li><a href="https://github.com/ancsemi/Haven-Desktop" target="_blank">GitHub (Desktop)</a></li>
         <li><a href="https://github.com/ancsemi/Haven/blob/main/GUIDE.md" target="_blank">Setup Guide</a></li>
         <li><a href="https://github.com/ancsemi/Haven/blob/main/CHANGELOG.md" target="_blank">Changelog</a></li>
         <li><a href="mailto:help.havenapp@gmail.com?subject=Haven%20Bug%20Report">Report a Bug</a></li>

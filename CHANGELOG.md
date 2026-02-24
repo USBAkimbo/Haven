@@ -11,6 +11,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Haven uses [Sema
 
 ---
 
+## [2.3.0] — 2026-02-24
+
+### Added
+- **Webcam video in voice channels** — new camera button in the voice panel lets users broadcast their webcam to all voice participants. Includes start/stop, device picker, late-joiner renegotiation, and per-user video tiles in a dedicated webcam grid.
+- **Webcam grid UI** — resizable, collapsible webcam container with layout picker (Auto grid, Vertical stack, Side-by-side, 2×2), size slider, minimize/close controls, double-click focus mode, and Picture-in-Picture pop-out per tile.
+- **Plugin & Theme system** — full hot-loadable plugin architecture with `HavenApi` (DOM helpers, data/localStorage, toasts, confirm dialogs). Server-side `/api/plugins` and `/api/themes` endpoints scan directories and parse JSDoc metadata. New Settings UI section with toggle switches and refresh. Includes example plugin: `MessageTimestamps.plugin.js`.
+- **Two new light themes** — "Daylight" (warm/amber) and "Cloudy" (cool/blue-grey) with full CSS variable sets.
+- **Font size picker** — Small (13px), Normal (15px), Large (17px), and Extra Large (20px) options in settings, persisted to localStorage.
+- **Invite user to channel** — right-click any online user to invite them to a channel. Server validates membership, avoids duplicates, auto-joins sub-channels, auto-assigns roles, and notifies the invited user.
+- **Admin "View All Members" panel** — admin modal showing every registered user with search, filters (All/Online/Offline/New/Banned), role badges, avatar, online status, join date, and channel count.
+- **Profile hover popups** — hovering over a username or avatar shows a translucent profile preview with delay and auto-dismiss.
+- **Haven Desktop beta** — standalone Electron desktop app now available at [github.com/ancsemi/Haven-Desktop](https://github.com/ancsemi/Haven-Desktop). Per-app audio, native notifications, system tray, one-click install.
+- **Password version / session invalidation** — changing your password now force-disconnects all other active sessions via `force-logout` event. JWT includes `pwv` (password version) claim.
+- **Server-sent toast events** — new `toast` socket event for server-to-client toast notifications.
+- **Google Fonts CSP support** — added `fonts.googleapis.com` and `fonts.gstatic.com` to Content Security Policy.
+
+### Fixed
+- **Double-encoding of special characters** — server-side `sanitizeText()` no longer entity-encodes characters; client handles escaping, preventing double-encoding on display.
+- **Flood-gate false disconnects on WebRTC signaling** — high-frequency WebRTC events now bypass the global event rate limiter.
+- **Incomplete user deletion cleanup** — admin delete-user and self-delete now also purge `user_roles`, `read_positions`, `push_subscriptions`, and `fcm_tokens`.
+- **Silent audio track leak** — silent audio track is now cached and reused; `AudioContext` properly closed on voice disconnect.
+- **Auto-cleanup chunking** — large message deletions are now chunked (1,000 at a time) to avoid SQL timeouts.
+- **Orphaned import temp file cleanup** — cleanup now also runs at startup, not just on the 15-minute interval.
+- **Admin transfer atomicity** — admin transfer is now wrapped in a SQLite transaction.
+- **Password minimum length** — registration now requires 8 characters (up from 6).
+
+### Changed
+- **Server-side `sanitizeText()` rewritten** — simplified to focused dangerous-tag removals plus event-handler and `javascript:` URI stripping.
+- Website & docs updated to v2.3.0 with Haven Desktop beta links.
+
+---
+
 ## [2.2.5] — 2026-02-23
 
 ### Security

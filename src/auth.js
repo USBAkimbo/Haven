@@ -119,7 +119,7 @@ router.post('/register', async (req, res) => {
     } catch { /* non-critical */ }
 
     const token = jwt.sign(
-      { id: result.lastInsertRowid, username, isAdmin: !!isAdmin, displayName: username },
+      { id: result.lastInsertRowid, username, isAdmin: !!isAdmin, displayName: username, pwv: 1 },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -192,7 +192,7 @@ router.post('/login', async (req, res) => {
     // key is derived from the user's password client-side)
 
     const token = jwt.sign(
-      { id: user.id, username: user.username, isAdmin: !!user.is_admin, displayName },
+      { id: user.id, username: user.username, isAdmin: !!user.is_admin, displayName, pwv: user.password_version || 1 },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -242,14 +242,26 @@ router.post('/change-password', async (req, res) => {
     if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
 
     const hash = await bcrypt.hash(newPassword, 12);
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+    const newPwv = (user.password_version || 1) + 1;
+    db.prepare('UPDATE users SET password_hash = ?, password_version = ? WHERE id = ?').run(hash, newPwv, user.id);
 
     // Issue a fresh token so the session stays alive
     const freshToken = jwt.sign(
-      { id: user.id, username: user.username, isAdmin: !!user.is_admin, displayName: user.display_name || user.username },
+      { id: user.id, username: user.username, isAdmin: !!user.is_admin, displayName: user.display_name || user.username, pwv: newPwv },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
+
+    // Disconnect all existing sockets for this user (forces re-login on other sessions)
+    const io = req.app.get('io');
+    if (io) {
+      for (const [, s] of io.sockets.sockets) {
+        if (s.user && s.user.id === user.id) {
+          s.emit('force-logout', { reason: 'password_changed' });
+          s.disconnect(true);
+        }
+      }
+    }
 
     res.json({ message: 'Password changed successfully', token: freshToken });
   } catch (err) {
