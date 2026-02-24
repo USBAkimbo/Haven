@@ -27,3 +27,6 @@ start.sh
 # Website (not needed in the container)
 website/
 docs/
+
+# Desktop app (Electron — not used in Docker)
+desktop/

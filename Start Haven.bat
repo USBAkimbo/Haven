@@ -223,10 +223,9 @@ if "%HAVEN_PROTO%"=="https" (
 )
 echo.
 
-:: Open browser with correct protocol
+:: ── Open browser automatically ──────────────────────────────
 echo  [*] Opening browser...
 start %HAVEN_PROTO%://localhost:3000
-
 echo.
 echo  ----------------------------------------
 echo   Server is running. Close this window

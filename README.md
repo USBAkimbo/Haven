@@ -5,7 +5,7 @@
 
 > **Your server. Your rules. No cloud. No accounts with Big Tech. No one reading your messages.**
 
-![Version](https://img.shields.io/badge/version-2.2.2-blue)
+![Version](https://img.shields.io/badge/version-2.2.5-blue)
 ![License](https://img.shields.io/badge/license-MIT--NC-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
@@ -365,8 +365,10 @@ Planned features — roughly in priority order:
 | **Webhook / Bot support** | ✅ Done | Incoming webhooks and a lightweight bot API for external integrations |
 | **Thread replies** | 📋 Planned | Threaded conversations that branch off a message |
 | **End-to-end encryption** | ✅ Done | ECDH P-256 + AES-256-GCM encryption for DMs — private keys stay in the browser |
+| **Multi-factor authentication** | 📋 Planned | U2F/FIDO key and TOTP support, with optional admin MFA requirement |
+| **Session invalidation on password change** | 📋 Planned | All active sessions are forcibly logged out when a user changes their password |
+| **Recovery-key password reset** | 📋 Planned | Generate a 24-word recovery phrase from settings — used to reset your password without losing E2E DM history. Existing users get a one-time prompt to generate theirs. No admin involvement, no email required. |
 | **Android App** | 🚧 In Progress! | https://github.com/ancsemi/Haven-App |
-| **Desktop App** | 🚧 In Progress | Electron-based desktop client with virtual audio cable for per-app audio streaming |
 
 > Want something else? Open an issue — PRs are always welcome.
 

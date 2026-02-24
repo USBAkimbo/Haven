@@ -241,12 +241,17 @@ class VoiceManager {
       }
       if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
 
+      // Use saved input device if the user picked one
+      const savedInputId = localStorage.getItem('haven_input_device') || '';
+      const audioConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      };
+      if (savedInputId) audioConstraints.deviceId = { exact: savedInputId };
+
       this.rawStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
+        audio: audioConstraints,
         video: false
       });
 
@@ -273,6 +278,9 @@ class VoiceManager {
       this.currentChannel = channelCode;
       this.inVoice = true;
       this.isMuted = false;
+      
+      // Persist voice channel for auto-rejoin after page refresh or server restart
+      try { localStorage.setItem('haven_voice_channel', channelCode); } catch {}
 
       this.socket.emit('voice-join', { code: channelCode });
 
@@ -337,6 +345,10 @@ class VoiceManager {
     this.isDeafened = false;
     this.screenSharers.clear();
     this.screenGainNodes.clear();
+    
+    // Clear persisted voice channel
+    try { localStorage.removeItem('haven_voice_channel'); } catch {}
+    
     // Clear any pending disconnect-recovery timers
     if (this._disconnectTimers) {
       for (const key of Object.keys(this._disconnectTimers)) {
@@ -404,15 +416,21 @@ class VoiceManager {
       const displayMediaOptions = {
         video: videoConstraints,
         audio: true,
-        surfaceSwitching: 'exclude',
-        selfBrowserSurface: 'include',
-        monitorTypeSurfaces: 'include'
       };
 
-      // Use CaptureController if available to manage the capture session
-      if (typeof CaptureController !== 'undefined') {
-        this._captureController = new CaptureController();
-        displayMediaOptions.controller = this._captureController;
+      // These options aren't supported in Electron's Chromium — only add them
+      // when running in a regular browser to avoid immediate rejection.
+      const isElectron = !!(window.havenDesktop || navigator.userAgent.includes('Electron'));
+      if (!isElectron) {
+        displayMediaOptions.surfaceSwitching = 'exclude';
+        displayMediaOptions.selfBrowserSurface = 'include';
+        displayMediaOptions.monitorTypeSurfaces = 'include';
+
+        // Use CaptureController if available to manage the capture session
+        if (typeof CaptureController !== 'undefined') {
+          this._captureController = new CaptureController();
+          displayMediaOptions.controller = this._captureController;
+        }
       }
 
       this.screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
@@ -816,6 +834,122 @@ class VoiceManager {
     } catch { return 1; }
   }
 
+  // ── Live Device Switching ────────────────────────────────
+
+  /**
+   * Switch the active microphone (input device) while in a voice call.
+   * Re-acquires getUserMedia with the new deviceId, rebuilds the noise-gate
+   * chain, and replaces the audio track on every peer connection.
+   * @param {string} deviceId - MediaDeviceInfo.deviceId (empty = system default)
+   */
+  async switchInputDevice(deviceId) {
+    if (!this.inVoice) return;
+
+    const audioConstraints = {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
+    };
+    if (deviceId) audioConstraints.deviceId = { exact: deviceId };
+
+    let newRawStream;
+    try {
+      newRawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
+    } catch (err) {
+      console.error('[Voice] Failed to switch input device:', err);
+      return;
+    }
+
+    // Stop old raw tracks
+    if (this.rawStream) {
+      this.rawStream.getTracks().forEach(t => t.stop());
+    }
+    this.rawStream = newRawStream;
+
+    // Rebuild noise gate chain
+    this._stopNoiseGate();
+    this._stopLocalTalkDetection();
+
+    const source = this.audioCtx.createMediaStreamSource(this.rawStream);
+    const gateAnalyser = this.audioCtx.createAnalyser();
+    gateAnalyser.fftSize = 2048;
+    gateAnalyser.smoothingTimeConstant = 0.3;
+    source.connect(gateAnalyser);
+
+    const gateGain = this.audioCtx.createGain();
+    source.connect(gateGain);
+
+    const dest = this.audioCtx.createMediaStreamDestination();
+    gateGain.connect(dest);
+
+    this._noiseGateAnalyser = gateAnalyser;
+    this._noiseGateGain = gateGain;
+
+    const oldLocalStream = this.localStream;
+    this.localStream = dest.stream;
+    this._startNoiseGate();
+    this._startLocalTalkDetection();
+
+    // Replace the audio track on every peer connection
+    const newTrack = this.localStream.getAudioTracks()[0];
+    for (const [, peer] of this.peers) {
+      const senders = peer.connection.getSenders();
+      const audioSender = senders.find(s => s.track && s.track.kind === 'audio' &&
+        (!this.screenStream || !this.screenStream.getAudioTracks().includes(s.track)));
+      if (audioSender) {
+        await audioSender.replaceTrack(newTrack).catch(e =>
+          console.warn('[Voice] replaceTrack failed for peer:', e)
+        );
+      }
+    }
+
+    // Re-apply mute state
+    if (this.isMuted) {
+      this.rawStream.getAudioTracks().forEach(t => { t.enabled = false; });
+      this.localStream.getAudioTracks().forEach(t => { t.enabled = false; });
+    }
+
+    // Clean up old local stream
+    if (oldLocalStream) {
+      oldLocalStream.getTracks().forEach(t => t.stop());
+    }
+
+    // Persist preference
+    localStorage.setItem('haven_input_device', deviceId || '');
+    console.log(`[Voice] Input device switched: ${deviceId || 'default'}`);
+  }
+
+  /**
+   * Switch the output device (speaker/headphones) for all voice audio.
+   * Routes through both HTMLMediaElement.setSinkId() AND AudioContext.setSinkId()
+   * since voice audio is piped through Web Audio API gain nodes.
+   * @param {string} deviceId - MediaDeviceInfo.deviceId (empty = system default)
+   */
+  async switchOutputDevice(deviceId) {
+    localStorage.setItem('haven_output_device', deviceId || '');
+
+    // 1. Switch the AudioContext output (this is where voice audio actually plays)
+    if (this.audioCtx && typeof this.audioCtx.setSinkId === 'function') {
+      try {
+        await this.audioCtx.setSinkId(deviceId || '');
+        console.log(`[Voice] AudioContext sink switched: ${deviceId || 'default'}`);
+      } catch (e) {
+        console.warn('[Voice] AudioContext.setSinkId failed:', e);
+      }
+    }
+
+    // 2. Also switch any HTMLMediaElements (fallback audio, screen share, etc.)
+    const elements = document.querySelectorAll('audio, video');
+    for (const el of elements) {
+      if (typeof el.setSinkId === 'function') {
+        try { await el.setSinkId(deviceId || ''); } catch (e) {
+          console.warn('[Voice] setSinkId failed on element:', e);
+        }
+      }
+    }
+    console.log(`[Voice] Output device switched: ${deviceId || 'default'}`);
+  }
+
   // ── Screen Share Audio ────────────────────────────────
 
   _playScreenAudio(userId, stream) {
@@ -827,6 +961,12 @@ class VoiceManager {
       audioEl.autoplay = true;
       audioEl.playsInline = true;
       document.getElementById('audio-container').appendChild(audioEl);
+
+      // Apply saved output device
+      const savedOutput = localStorage.getItem('haven_output_device');
+      if (savedOutput && typeof audioEl.setSinkId === 'function') {
+        audioEl.setSinkId(savedOutput).catch(() => {});
+      }
     }
     audioEl.srcObject = stream;
 
@@ -1060,6 +1200,12 @@ class VoiceManager {
       audioEl.autoplay = true;
       audioEl.playsInline = true;
       document.getElementById('audio-container').appendChild(audioEl);
+
+      // Apply saved output device
+      const savedOutput = localStorage.getItem('haven_output_device');
+      if (savedOutput && typeof audioEl.setSinkId === 'function') {
+        audioEl.setSinkId(savedOutput).catch(() => {});
+      }
     }
     audioEl.srcObject = stream;
 

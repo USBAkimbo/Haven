@@ -1,6 +1,6 @@
 {
   "name": "haven",
-  "version": "2.2.4",
+  "version": "2.2.5",
   "description": "Self-hosted private chat — your server, your rules",
   "license": "MIT-NC",
   "main": "server.js",
@@ -17,6 +17,7 @@
     "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "express-rate-limit": "^7.5.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "localtunnel": "^2.0.2",

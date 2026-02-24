@@ -38,6 +38,14 @@ function sanitizeText(str) {
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<meta\b[^>]*\/?>/gi, '')
     .replace(/<form\b[^>]*>[\s\S]*?<\/form>/gi, '')
+    .replace(/<img\b[^>]*\/?>/gi, '')
+    .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '')
+    .replace(/<video\b[^>]*>[\s\S]*?<\/video>/gi, '')
+    .replace(/<audio\b[^>]*>[\s\S]*?<\/audio>/gi, '')
+    .replace(/<source\b[^>]*\/?>/gi, '')
+    .replace(/<details\b[^>]*>[\s\S]*?<\/details>/gi, '')
+    .replace(/<math\b[^>]*>[\s\S]*?<\/math>/gi, '')
+    .replace(/<base\b[^>]*\/?>/gi, '')
     .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')  // strip event handlers like onerror="..."
     .replace(/on\w+\s*=\s*[^\s>]+/gi, '')         // strip unquoted event handlers
     .replace(/javascript\s*:/gi, 'blocked:');       // neutralize javascript: URIs
@@ -1114,7 +1122,7 @@ function setupSocketHandlers(io, db) {
         db.prepare(`
           SELECT r.message_id, r.emoji, r.user_id, COALESCE(u.display_name, u.username) as username
           FROM reactions r JOIN users u ON r.user_id = u.id
-          WHERE r.message_id IN (${ph})
+          WHERE r.message_id IN (${ph}) ORDER BY r.id
         `).all(...msgIds).forEach(r => {
           if (!reactionMap.has(r.message_id)) reactionMap.set(r.message_id, []);
           reactionMap.get(r.message_id).push({ emoji: r.emoji, user_id: r.user_id, username: r.username });
@@ -1680,6 +1688,7 @@ function setupSocketHandlers(io, db) {
       if (!data || typeof data !== 'object') return;
       if (!isString(data.code, 8, 8)) return;
       if (!isString(data.url, 1, 500)) return;
+      if (!/^https?:\/\//i.test(data.url)) return socket.emit('error-msg', 'Invalid URL');
       const voiceRoom = voiceUsers.get(data.code);
       if (!voiceRoom || !voiceRoom.has(socket.user.id)) return;
 
@@ -1834,7 +1843,7 @@ function setupSocketHandlers(io, db) {
         // Broadcast updated reactions for this message
         const reactions = db.prepare(`
           SELECT r.emoji, r.user_id, COALESCE(u.display_name, u.username) as username FROM reactions r
-          JOIN users u ON r.user_id = u.id WHERE r.message_id = ?
+          JOIN users u ON r.user_id = u.id WHERE r.message_id = ? ORDER BY r.id
         `).all(data.messageId);
 
         io.to(`channel:${code}`).emit('reactions-updated', {
@@ -1864,7 +1873,7 @@ function setupSocketHandlers(io, db) {
 
       const reactions = db.prepare(`
         SELECT r.emoji, r.user_id, COALESCE(u.display_name, u.username) as username FROM reactions r
-        JOIN users u ON r.user_id = u.id WHERE r.message_id = ?
+        JOIN users u ON r.user_id = u.id WHERE r.message_id = ? ORDER BY r.id
       `).all(data.messageId);
 
       io.to(`channel:${code}`).emit('reactions-updated', {
@@ -3287,7 +3296,13 @@ function setupSocketHandlers(io, db) {
     socket.on('push-subscribe', (data) => {
       if (!data || typeof data !== 'object') return;
       const { endpoint, keys } = data;
-      if (!endpoint || !keys || !keys.p256dh || !keys.auth) return;
+      if (typeof endpoint !== 'string' || !endpoint) return;
+      if (!keys || typeof keys !== 'object') return;
+      if (typeof keys.p256dh !== 'string' || !keys.p256dh) return;
+      if (typeof keys.auth !== 'string' || !keys.auth) return;
+
+      // Endpoint must be a valid HTTPS push service URL
+      try { const u = new URL(endpoint); if (u.protocol !== 'https:') return; } catch { return; }
 
       try {
         db.prepare(`
@@ -4040,7 +4055,7 @@ function setupSocketHandlers(io, db) {
 
       const level = isInt(data.level) && data.level >= 1 && data.level <= 99 ? data.level : 25;
       const scope = data.scope === 'channel' ? 'channel' : 'server';
-      const color = isString(data.color, 4, 7) ? data.color : null;
+      const color = isString(data.color, 4, 7) && /^#[0-9a-fA-F]{3,6}$/.test(data.color) ? data.color : null;
       const autoAssign = data.autoAssign ? 1 : 0;
 
       try {
@@ -4088,7 +4103,10 @@ function setupSocketHandlers(io, db) {
 
         if (isString(data.name, 1, 30)) { updates.push('name = ?'); values.push(data.name.trim()); }
         if (isInt(data.level) && data.level >= 1 && data.level <= 99) { updates.push('level = ?'); values.push(data.level); }
-        if (data.color !== undefined) { updates.push('color = ?'); values.push(data.color || null); }
+        if (data.color !== undefined) {
+          const safeColor = (isString(data.color, 4, 7) && /^#[0-9a-fA-F]{3,6}$/.test(data.color)) ? data.color : null;
+          updates.push('color = ?'); values.push(safeColor);
+        }
         if (data.autoAssign !== undefined) {
           if (data.autoAssign) {
             db.prepare('UPDATE roles SET auto_assign = 0').run();
@@ -4994,4 +5012,4 @@ function setupSocketHandlers(io, db) {
   });
 }
 
-module.exports = { setupSocketHandlers };
+module.exports = { setupSocketHandlers, sanitizeText };

@@ -135,6 +135,8 @@ class HavenApp {
     this._setupGifPicker();
     this._startStatusBar();
     this._setupMobile();
+    this._setupMobileSidebarServers();
+    this._setupCollapsibleSections();
     this._setupIOSKeyboard();
     this._setupMobileBridge();
     this._setupStatusPicker();
@@ -299,6 +301,20 @@ class HavenApp {
       // Re-join voice if we were in voice before reconnect
       if (this.voice && this.voice.inVoice && this.voice.currentChannel) {
         this.socket.emit('voice-rejoin', { code: this.voice.currentChannel });
+      } else {
+        // Check localStorage for saved voice channel (persists across page refreshes / server restarts)
+        try {
+          const savedVoiceChannel = localStorage.getItem('haven_voice_channel');
+          if (savedVoiceChannel && /^[a-f0-9]{8}$/i.test(savedVoiceChannel)) {
+            // Auto-rejoin saved voice channel after delay (wait for channels to load)
+            setTimeout(() => {
+              if (this.voice && !this.voice.inVoice) {
+                console.log('[Voice] Auto-rejoining saved voice channel:', savedVoiceChannel);
+                this.voice.join(savedVoiceChannel);
+              }
+            }, 1500);
+          }
+        } catch {}
       }
       // Apply any queued status change from when we were disconnected
       if (this._pendingStatus) {
@@ -324,6 +340,19 @@ class HavenApp {
         }
         // Re-fetch channels in case list changed while backgrounded
         this.socket?.emit('get-channels');
+        
+        // Mobile voice fix: check if we should be in voice but got disconnected
+        try {
+          const savedVoiceChannel = localStorage.getItem('haven_voice_channel');
+          if (savedVoiceChannel && this.voice && !this.voice.inVoice && this.socket?.connected) {
+            console.log('[Voice] Mobile foreground — rejoining voice channel:', savedVoiceChannel);
+            setTimeout(() => {
+              if (this.voice && !this.voice.inVoice) {
+                this.voice.join(savedVoiceChannel);
+              }
+            }, 500);
+          }
+        } catch {}
       }
     });
 
@@ -1478,7 +1507,7 @@ class HavenApp {
     document.getElementById('screen-share-close').addEventListener('click', () => this._closeScreenShare());
 
     // Music controls
-    document.getElementById('music-share-btn').addEventListener('click', () => this._openMusicModal());
+    document.getElementById('music-share-btn')?.addEventListener('click', () => this._openMusicModal());
     document.getElementById('share-music-btn').addEventListener('click', () => this._shareMusic());
     document.getElementById('cancel-music-btn').addEventListener('click', () => this._closeMusicModal());
     document.getElementById('music-modal').addEventListener('click', (e) => {
@@ -1538,11 +1567,37 @@ class HavenApp {
       if (panel.style.display === 'none') {
         panel.style.display = '';
         if (btn) btn.classList.add('active');
+        // Populate audio device dropdowns each time panel opens
+        this._populateAudioDevices();
       } else {
         panel.style.display = 'none';
         if (btn) btn.classList.remove('active');
       }
     });
+
+    // ── Audio device dropdowns (input & output) ──
+    const inputDeviceSelect  = document.getElementById('voice-input-device');
+    const outputDeviceSelect = document.getElementById('voice-output-device');
+    if (inputDeviceSelect) {
+      inputDeviceSelect.addEventListener('change', (e) => {
+        const deviceId = e.target.value;
+        localStorage.setItem('haven_input_device', deviceId);
+        // Hot-swap if in voice
+        if (this.voice && this.voice.inVoice) {
+          this.voice.switchInputDevice(deviceId);
+        }
+      });
+    }
+    if (outputDeviceSelect) {
+      outputDeviceSelect.addEventListener('change', (e) => {
+        const deviceId = e.target.value;
+        localStorage.setItem('haven_output_device', deviceId);
+        // Hot-swap output
+        if (this.voice) {
+          this.voice.switchOutputDevice(deviceId);
+        }
+      });
+    }
     // Stream size slider
     const streamSizeSlider = document.getElementById('stream-size-slider');
     if (streamSizeSlider) {
@@ -1855,6 +1910,14 @@ class HavenApp {
       // Spoiler reveal toggle
       if (e.target.closest('.spoiler')) {
         e.target.closest('.spoiler').classList.toggle('revealed');
+      }
+    });
+
+    // Image right-click — custom context menu for chat thumbnails
+    document.getElementById('messages').addEventListener('contextmenu', (e) => {
+      if (e.target.classList.contains('chat-image')) {
+        e.preventDefault();
+        this._showImageContextMenu(e, e.target.src);
       }
     });
 
@@ -2503,7 +2566,7 @@ class HavenApp {
       const initial = s.name.charAt(0).toUpperCase();
       const iconUrl = s.icon || (s.status.icon || null);
       const iconContent = iconUrl
-        ? `<img src="${this._escapeHtml(iconUrl)}" alt="" onerror="this.style.display='none';this.parentElement.textContent='${initial}'">`
+        ? `<img src="${this._escapeHtml(iconUrl)}" alt="" class="manage-srv-icon-img">`
         : initial;
 
       row.innerHTML = `
@@ -2535,6 +2598,15 @@ class HavenApp {
         this._showToast(`Removed "${s.name}"`, 'success');
       });
 
+      // CSP-safe icon error handling: hide broken img, show initial letter
+      const iconImg = row.querySelector('.manage-srv-icon-img');
+      if (iconImg) {
+        iconImg.addEventListener('error', () => {
+          iconImg.style.display = 'none';
+          iconImg.parentElement.textContent = initial;
+        });
+      }
+
       container.appendChild(row);
     });
   }
@@ -2551,8 +2623,8 @@ class HavenApp {
       // Use custom icon, auto-pulled icon from health check, or letter initial
       const iconUrl = s.icon || (s.status.icon || null);
       const iconContent = iconUrl
-        ? `<img src="${this._escapeHtml(iconUrl)}" class="server-icon-img" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display=''"><span class="server-icon-text" style="display:none">${initial}</span>`
-        : `<span class="server-icon-text">${initial}</span>`;
+        ? `<img src="${this._escapeHtml(iconUrl)}" class="server-icon-img" alt=""><span class="server-icon-text" style="display:none">${this._escapeHtml(initial)}</span>`
+        : `<span class="server-icon-text">${this._escapeHtml(initial)}</span>`;
       return `
         <div class="server-icon remote" data-url="${this._escapeHtml(s.url)}"
              title="${this._escapeHtml(s.name)} — ${statusText}">
@@ -2562,6 +2634,15 @@ class HavenApp {
         </div>
       `;
     }).join('');
+
+    // CSP-safe: handle broken server icons, fall back to letter initial
+    list.querySelectorAll('.server-icon-img').forEach(img => {
+      img.addEventListener('error', () => {
+        img.style.display = 'none';
+        const fallback = img.nextElementSibling;
+        if (fallback) fallback.style.display = '';
+      });
+    });
 
     list.querySelectorAll('.server-icon.remote').forEach(el => {
       el.addEventListener('click', (e) => {
@@ -2580,6 +2661,9 @@ class HavenApp {
         this._editServer(el.dataset.url);
       });
     });
+
+    // Also update mobile sidebar server bubbles
+    this._renderMobileSidebarServers();
   }
 
   // ═══════════════════════════════════════════════════════
@@ -2831,7 +2915,7 @@ class HavenApp {
       const dotClass = online === true ? 'online' : online === false ? 'offline' : 'unknown';
       const iconUrl = s.icon || (s.status.icon || null);
       const iconHtml = iconUrl
-        ? `<img src="${this._escapeHtml(iconUrl)}" class="msrv-icon" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display=''">`
+        ? `<img src="${this._escapeHtml(iconUrl)}" class="msrv-icon" alt="">`
         + `<span class="msrv-initial" style="display:none">${initial}</span>`
         : `<span class="msrv-initial">${initial}</span>`;
       return `<a class="mobile-server-item" href="${this._escapeHtml(s.url)}" target="_blank" rel="noopener">
@@ -2840,6 +2924,112 @@ class HavenApp {
         <span>${this._escapeHtml(s.name)}</span>
       </a>`;
     }).join('');
+    list.querySelectorAll('.msrv-icon').forEach(img => {
+      img.addEventListener('error', () => {
+        img.style.display = 'none';
+        if (img.nextElementSibling) img.nextElementSibling.style.display = '';
+      });
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // MOBILE SIDEBAR SERVER BUBBLES
+  // ═══════════════════════════════════════════════════════
+
+  _renderMobileSidebarServers() {
+    const scroll = document.getElementById('mobile-servers-scroll');
+    if (!scroll || !this.serverManager) return;
+    const servers = this.serverManager.getAll();
+    if (servers.length === 0) {
+      scroll.innerHTML = '<span class="mobile-servers-empty">No servers added yet</span>';
+      return;
+    }
+    scroll.innerHTML = servers.map(s => {
+      const initial = s.name.charAt(0).toUpperCase();
+      const online = s.status.online;
+      const dotClass = online === true ? 'online' : online === false ? 'offline' : 'unknown';
+      const iconUrl = s.icon || (s.status.icon || null);
+      const iconHtml = iconUrl
+        ? `<img src="${this._escapeHtml(iconUrl)}" alt="${this._escapeHtml(initial)}" class="mobile-srv-icon-img">`
+        : `<span>${this._escapeHtml(initial)}</span>`;
+      return `<a class="mobile-srv-bubble" href="${this._escapeHtml(s.url)}" target="_blank" rel="noopener" title="${this._escapeHtml(s.name)}">
+        ${iconHtml}
+        <span class="msrv-status ${dotClass}"></span>
+      </a>`;
+    }).join('');
+
+    // CSP-safe: handle broken server icons, fall back to letter initial
+    scroll.querySelectorAll('.mobile-srv-icon-img').forEach(img => {
+      img.addEventListener('error', () => {
+        const initial = img.alt || '?';
+        const span = document.createElement('span');
+        span.textContent = initial;
+        img.replaceWith(span);
+      });
+    });
+  }
+
+  _setupMobileSidebarServers() {
+    // Toggle collapse
+    const toggle = document.getElementById('mobile-servers-toggle');
+    const arrow = document.getElementById('mobile-servers-arrow');
+    const row = document.getElementById('mobile-servers-row');
+    if (toggle && row) {
+      const collapsed = localStorage.getItem('haven_mobile_servers_collapsed') === '1';
+      if (collapsed) {
+        arrow?.classList.add('collapsed');
+        row.classList.add('collapsed');
+      }
+      toggle.addEventListener('click', () => {
+        const isCollapsed = row.classList.toggle('collapsed');
+        arrow?.classList.toggle('collapsed', isCollapsed);
+        localStorage.setItem('haven_mobile_servers_collapsed', isCollapsed ? '1' : '0');
+      });
+    }
+    // Add-server button
+    document.getElementById('mobile-srv-add-btn')?.addEventListener('click', () => {
+      this._editingServerUrl = null;
+      document.getElementById('add-server-modal-title').textContent = 'Add a Server';
+      document.getElementById('add-server-modal').style.display = 'flex';
+      document.getElementById('add-server-name-input').value = '';
+      document.getElementById('server-url-input').value = '';
+      document.getElementById('server-url-input').disabled = false;
+      document.getElementById('add-server-icon-input').value = '';
+      document.getElementById('save-server-btn').textContent = 'Add Server';
+      document.getElementById('add-server-name-input').focus();
+    });
+    // Initial render
+    this._renderMobileSidebarServers();
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // COLLAPSIBLE SIDEBAR SECTIONS (Join / Create)
+  // ═══════════════════════════════════════════════════════
+
+  _setupCollapsibleSections() {
+    const sections = [
+      { toggle: 'join-section-toggle', arrow: 'join-section-arrow', body: 'join-section-body', key: 'haven_join_collapsed' },
+      { toggle: 'create-section-toggle', arrow: 'create-section-arrow', body: 'create-section-body', key: 'haven_create_collapsed' },
+    ];
+    sections.forEach(({ toggle, arrow, body, key }) => {
+      const toggleEl = document.getElementById(toggle);
+      const arrowEl = document.getElementById(arrow);
+      const bodyEl = document.getElementById(body);
+      if (!toggleEl || !bodyEl) return;
+
+      // Restore saved state (default = expanded)
+      const saved = localStorage.getItem(key);
+      if (saved === '1') {
+        arrowEl?.classList.add('collapsed');
+        bodyEl.classList.add('collapsed');
+      }
+
+      toggleEl.addEventListener('click', () => {
+        const isCollapsed = bodyEl.classList.toggle('collapsed');
+        arrowEl?.classList.toggle('collapsed', isCollapsed);
+        localStorage.setItem(key, isCollapsed ? '1' : '0');
+      });
+    });
   }
 
   /* ── iOS PWA Keyboard Layout Fix ────────────────────── */
@@ -3071,8 +3261,9 @@ class HavenApp {
 
   async _uploadImage(file) {
     if (!this.currentChannel) return;
-    if (file.size > 5 * 1024 * 1024) {
-      return this._showToast('Image too large (max 5 MB)', 'error');
+    const _maxMb = parseInt(this.serverSettings?.max_upload_mb) || 25;
+    if (file.size > _maxMb * 1024 * 1024) {
+      return this._showToast(`Image too large (max ${_maxMb} MB)`, 'error');
     }
 
     const formData = new FormData();
@@ -3108,8 +3299,9 @@ class HavenApp {
 
   _queueImage(file) {
     if (!file || !file.type.startsWith('image/')) return;
-    if (file.size > 5 * 1024 * 1024) {
-      return this._showToast('Image too large (max 5 MB)', 'error');
+    const _maxMb = parseInt(this.serverSettings?.max_upload_mb) || 25;
+    if (file.size > _maxMb * 1024 * 1024) {
+      return this._showToast(`Image too large (max ${_maxMb} MB)`, 'error');
     }
     if (!this._imageQueue) this._imageQueue = [];
     if (this._imageQueue.length >= 5) {
@@ -3273,7 +3465,13 @@ class HavenApp {
         reader.onload = (ev) => {
           this._pendingAvatarPreviewUrl = ev.target.result;
           const preview = document.getElementById('avatar-upload-preview');
-          if (preview) preview.innerHTML = `<img src="${ev.target.result}" alt="avatar preview">`;
+          if (preview) {
+            const img = document.createElement('img');
+            img.src = ev.target.result;
+            img.alt = 'avatar preview';
+            preview.innerHTML = '';
+            preview.appendChild(img);
+          }
           this._markAvatarUnsaved();
         };
         reader.readAsDataURL(file);
@@ -3314,7 +3512,13 @@ class HavenApp {
         
         // Update preview to use the server URL
         const preview = document.getElementById('avatar-upload-preview');
-        if (preview) preview.innerHTML = `<img src="${data.url}" alt="avatar">`;
+        if (preview) {
+          const img = document.createElement('img');
+          img.src = data.url;
+          img.alt = 'avatar';
+          preview.innerHTML = '';
+          preview.appendChild(img);
+        }
         
         // Notify connected sockets about the avatar change (small URL, not data URL)
         if (this.socket) this.socket.emit('set-avatar', { url: data.url });
@@ -3900,10 +4104,23 @@ class HavenApp {
   _setupLightbox() {
     const lb = document.getElementById('image-lightbox');
     if (!lb) return;
-    lb.addEventListener('click', () => this._closeLightbox());
+    // Only close when clicking the backdrop (not the image itself)
+    lb.addEventListener('click', (e) => {
+      if (e.target === lb) this._closeLightbox();
+    });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && lb.style.display !== 'none') this._closeLightbox();
     });
+
+    // Custom context menu for lightbox image (Save, Copy, Open)
+    const lbImg = document.getElementById('lightbox-img');
+    if (lbImg) {
+      lbImg.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._showImageContextMenu(e, lbImg.src);
+      });
+    }
   }
 
   _openLightbox(src) {
@@ -3919,6 +4136,70 @@ class HavenApp {
     if (lb) { lb.style.display = 'none'; }
     const img = document.getElementById('lightbox-img');
     if (img) { img.src = ''; }
+    this._hideImageContextMenu();
+  }
+
+  /** Show a custom image context menu (Save / Copy / Open in tab) */
+  _showImageContextMenu(e, src) {
+    this._hideImageContextMenu();
+    const menu = document.createElement('div');
+    menu.id = 'image-context-menu';
+    menu.className = 'image-context-menu';
+    menu.innerHTML = `
+      <button data-action="save">💾 Save Image</button>
+      <button data-action="copy">📋 Copy Image</button>
+      <button data-action="open">🔗 Open in New Tab</button>
+    `;
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    document.body.appendChild(menu);
+    // Clamp to viewport
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+    if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+
+    menu.addEventListener('click', async (ev) => {
+      const action = ev.target.dataset.action;
+      if (action === 'save') {
+        const a = document.createElement('a');
+        a.href = src;
+        a.download = src.split('/').pop().split('?')[0] || 'image';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } else if (action === 'copy') {
+        try {
+          const resp = await fetch(src);
+          const blob = await resp.blob();
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+          this._showToast('Image copied to clipboard', 'success');
+        } catch {
+          this._showToast('Failed to copy image', 'error');
+        }
+      } else if (action === 'open') {
+        window.open(src, '_blank', 'noopener,noreferrer');
+      }
+      this._hideImageContextMenu();
+    });
+
+    // Close on click elsewhere
+    const closer = (ev) => {
+      if (!menu.contains(ev.target)) {
+        this._hideImageContextMenu();
+        document.removeEventListener('click', closer, true);
+        document.removeEventListener('contextmenu', closer, true);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('click', closer, true);
+      document.addEventListener('contextmenu', closer, true);
+    }, 0);
+  }
+
+  _hideImageContextMenu() {
+    const existing = document.getElementById('image-context-menu');
+    if (existing) existing.remove();
   }
 
   // ═══════════════════════════════════════════════════════
@@ -3988,12 +4269,12 @@ class HavenApp {
 
   _renderOverlayUserItem(u) {
     const initial = (u.username || '?')[0].toUpperCase();
-    const color = u.roleColor || u.avatarColor || '#7c5cfc';
+    const color = this._safeColor(u.roleColor || u.avatarColor, '#7c5cfc');
     const statusClass = u.online !== false ? 'online' : 'offline';
     const avatar = u.avatarUrl
       ? `<img src="${this._escapeHtml(u.avatarUrl)}" class="online-overlay-avatar-img" alt="">`
       : `<div class="online-overlay-avatar" style="background:${color}">${initial}</div>`;
-    const nameColor = u.roleColor ? ` style="color:${u.roleColor}"` : '';
+    const nameColor = u.roleColor ? ` style="color:${this._safeColor(u.roleColor)}"` : '';
     return `<div class="online-overlay-user ${statusClass}">
       ${avatar}
       <span class="online-overlay-username"${nameColor}>${this._escapeHtml(u.username)}</span>
@@ -4382,9 +4663,10 @@ class HavenApp {
 
   /** Escape HTML entities for safe innerHTML insertion */
   _escapeHtml(str) {
+    if (typeof str !== 'string') return '';
     const div = document.createElement('div');
     div.textContent = str;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   async _subscribePush() {
@@ -6215,7 +6497,7 @@ class HavenApp {
     }
 
     const msgRoleBadge = onlineUser && onlineUser.role
-      ? `<span class="user-role-badge msg-role-badge" style="color:${onlineUser.role.color || 'var(--text-muted)'}">${this._escapeHtml(onlineUser.role.name)}</span>`
+      ? `<span class="user-role-badge msg-role-badge" style="color:${this._safeColor(onlineUser.role.color, 'var(--text-muted)')}">${this._escapeHtml(onlineUser.role.name)}</span>`
       : '';
 
     const botBadge = msg.imported_from === 'discord'
@@ -6286,7 +6568,7 @@ class HavenApp {
       : `<div class="message-avatar ${shapeClass}" style="background-color:${color}">${initial}</div>`;
 
     const msgRoleBadge = onlineUser && onlineUser.role
-      ? `<span class="user-role-badge msg-role-badge" style="color:${onlineUser.role.color || 'var(--text-muted)'}">${this._escapeHtml(onlineUser.role.name)}</span>`
+      ? `<span class="user-role-badge msg-role-badge" style="color:${this._safeColor(onlineUser.role.color, 'var(--text-muted)')}">${this._escapeHtml(onlineUser.role.name)}</span>`
       : '';
 
     // Replace the compact element in-place
@@ -6633,14 +6915,14 @@ class HavenApp {
     const avatarHtml = `<div class="user-avatar-wrapper">${avatarImg}<span class="user-status-dot${statusClass ? ' ' + statusClass : ''}"></span></div>`;
 
     // Role: color dot to the left of name + tooltip on hover
-    const roleColor = u.role ? (u.role.color || 'var(--text-muted)') : '';
+    const roleColor = u.role ? this._safeColor(u.role.color, 'var(--text-muted)') : '';
     const roleDot = u.role
       ? `<span class="user-role-dot" style="background:${roleColor}" title="${this._escapeHtml(u.role.name)}"></span>`
       : '';
 
     // Keep the old badge for message area (msg-role-badge) but hide in sidebar
     const roleBadge = u.role
-      ? `<span class="user-role-badge" style="color:${u.role.color || 'var(--text-muted)'}" title="${this._escapeHtml(u.role.name)}">${this._escapeHtml(u.role.name)}</span>`
+      ? `<span class="user-role-badge" style="color:${this._safeColor(u.role.color, 'var(--text-muted)')}" title="${this._escapeHtml(u.role.name)}">${this._escapeHtml(u.role.name)}</span>`
       : '';
 
     // Build tooltip
@@ -6700,7 +6982,7 @@ class HavenApp {
     // Roles
     const rolesHtml = (profile.roles && profile.roles.length > 0)
       ? profile.roles.map(r =>
-          `<span class="profile-popup-role" style="border-color:${r.color || 'var(--border-light)'}; color:${r.color || 'var(--text-secondary)'}"><span class="profile-role-dot" style="background:${r.color || 'var(--text-muted)'}"></span>${this._escapeHtml(r.name)}</span>`
+          `<span class="profile-popup-role" style="border-color:${this._safeColor(r.color, 'var(--border-light)')}; color:${this._safeColor(r.color, 'var(--text-secondary)')}"><span class="profile-role-dot" style="background:${this._safeColor(r.color, 'var(--text-muted)')}"></span>${this._escapeHtml(r.name)}</span>`
         ).join('')
       : '';
 
@@ -6914,7 +7196,7 @@ class HavenApp {
     el.innerHTML = users.map(u => {
       const isSelf = u.id === this.user.id;
       const talking = this.voice && ((isSelf && this.voice.talkingState.get('self')) || this.voice.talkingState.get(u.id));
-      const dotColor = u.roleColor || '';
+      const dotColor = this._safeColor(u.roleColor);
       const dotStyle = dotColor ? ` style="background:${dotColor};--voice-dot-color:${dotColor}"` : '';
 
       // Stream indicators: is this user streaming? watching?
@@ -7222,7 +7504,7 @@ class HavenApp {
     if (this.voice && this.voice.inVoice && this.voice.currentChannel) {
       const ch = this.channels.find(c => c.code === this.voice.currentChannel);
       const name = ch ? (ch.is_dm && ch.dm_target ? `@ ${ch.dm_target.username}` : `# ${ch.name}`) : this.voice.currentChannel;
-      bar.innerHTML = `<span class="voice-bar-icon">🔊</span><span class="voice-bar-channel">${name}</span><button class="voice-bar-leave" id="voice-bar-leave-btn" title="Disconnect">✕</button>`;
+      bar.innerHTML = `<span class="voice-bar-icon">🔊</span><span class="voice-bar-channel">${this._escapeHtml(name)}</span><button class="voice-bar-leave" id="voice-bar-leave-btn" title="Disconnect">✕</button>`;
       bar.style.display = 'flex';
       document.getElementById('voice-bar-leave-btn').addEventListener('click', () => this._leaveVoice());
     } else {
@@ -7478,6 +7760,61 @@ class HavenApp {
       }
       this._updateHiddenStreamsBar();
       this._updateScreenShareVisibility();
+    }
+  }
+
+  // ── Audio Device Enumeration ─────────────────────────────
+
+  async _populateAudioDevices() {
+    const inputSelect  = document.getElementById('voice-input-device');
+    const outputSelect = document.getElementById('voice-output-device');
+    if (!inputSelect || !outputSelect) return;
+
+    let devices = [];
+    try {
+      // Request a temp stream to ensure device labels are populated (browsers
+      // hide labels until permission is granted at least once).
+      let tempStream = null;
+      const testDevices = await navigator.mediaDevices.enumerateDevices();
+      const hasLabels = testDevices.some(d => d.label);
+      if (!hasLabels) {
+        try {
+          tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch {}
+      }
+      devices = await navigator.mediaDevices.enumerateDevices();
+      if (tempStream) tempStream.getTracks().forEach(t => t.stop());
+    } catch (err) {
+      console.warn('[Haven] Could not enumerate audio devices:', err);
+      return;
+    }
+
+    const inputs  = devices.filter(d => d.kind === 'audioinput');
+    const outputs = devices.filter(d => d.kind === 'audiooutput');
+
+    const savedInput  = localStorage.getItem('haven_input_device') || '';
+    const savedOutput = localStorage.getItem('haven_output_device') || '';
+
+    // Populate input
+    inputSelect.innerHTML = '<option value="">Default Microphone</option>';
+    for (const dev of inputs) {
+      const label = dev.label || `Microphone ${inputs.indexOf(dev) + 1}`;
+      const opt = document.createElement('option');
+      opt.value = dev.deviceId;
+      opt.textContent = label;
+      if (savedInput === dev.deviceId) opt.selected = true;
+      inputSelect.appendChild(opt);
+    }
+
+    // Populate output
+    outputSelect.innerHTML = '<option value="">Default Speaker</option>';
+    for (const dev of outputs) {
+      const label = dev.label || `Speaker ${outputs.indexOf(dev) + 1}`;
+      const opt = document.createElement('option');
+      opt.value = dev.deviceId;
+      opt.textContent = label;
+      if (savedOutput === dev.deviceId) opt.selected = true;
+      outputSelect.appendChild(opt);
     }
   }
 
@@ -8826,10 +9163,14 @@ class HavenApp {
 
   // ── Utilities ─────────────────────────────────────────
 
-  _escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  /** Sanitize a CSS color value – only allow hex (#RGB / #RRGGBB), rgb(), hsl(), or CSS variables */
+  _safeColor(c, fallback = '') {
+    if (typeof c !== 'string') return fallback;
+    const s = c.trim();
+    if (/^#[0-9a-fA-F]{3,6}$/.test(s)) return s;
+    if (/^(rgb|hsl)a?\([0-9,\s.%]+\)$/.test(s)) return s;
+    if (/^var\(--[a-zA-Z0-9-]+\)$/.test(s)) return s;
+    return fallback;
   }
 
   _isImageUrl(str) {
@@ -8955,7 +9296,7 @@ class HavenApp {
     if (this.customEmojis && this.customEmojis.length > 0) {
       html = html.replace(/:([a-zA-Z0-9_-]+):/g, (match, name) => {
         const emoji = this.customEmojis.find(e => e.name === name.toLowerCase());
-        if (emoji) return `<img src="${emoji.url}" alt=":${name}:" title=":${name}:" class="custom-emoji">`;
+        if (emoji) return `<img src="${this._escapeHtml(emoji.url)}" alt=":${this._escapeHtml(name)}:" title=":${this._escapeHtml(name)}:" class="custom-emoji">`;
         return match;
       });
     }
@@ -9210,7 +9551,7 @@ class HavenApp {
         if (customMatch) {
           const ce = self.customEmojis.find(e => e.name === customMatch[1]);
           if (ce) {
-            btn.innerHTML = `<img src="${ce.url}" alt=":${ce.name}:" title=":${ce.name}:" class="custom-emoji">`;
+            btn.innerHTML = `<img src="${self._escapeHtml(ce.url)}" alt=":${self._escapeHtml(ce.name)}:" title=":${self._escapeHtml(ce.name)}:" class="custom-emoji">`;
           } else {
             btn.textContent = emoji;
           }
@@ -9307,7 +9648,7 @@ class HavenApp {
           return;
         }
         if (data.error) {
-          grid.innerHTML = `<div class="gif-picker-empty">${data.error}</div>`;
+          grid.innerHTML = `<div class="gif-picker-empty">${this._escapeHtml(data.error)}</div>`;
           return;
         }
         this._renderGifGrid(data.results || []);
@@ -9330,7 +9671,7 @@ class HavenApp {
           return;
         }
         if (data.error) {
-          grid.innerHTML = `<div class="gif-picker-empty">${data.error}</div>`;
+          grid.innerHTML = `<div class="gif-picker-empty">${this._escapeHtml(data.error)}</div>`;
           return;
         }
         const results = data.results || [];
@@ -9449,7 +9790,7 @@ class HavenApp {
           picker.innerHTML = '<div class="gif-slash-loading">GIF search not configured — an admin needs to set up the GIPHY API key (use the GIF button 🎞️)</div>';
           return;
         }
-        if (data.error) { picker.innerHTML = `<div class="gif-slash-loading">${data.error}</div>`; return; }
+        if (data.error) { picker.innerHTML = `<div class="gif-slash-loading">${this._escapeHtml(data.error)}</div>`; return; }
         const results = data.results || [];
         if (results.length === 0) { picker.innerHTML = '<div class="gif-slash-loading">No GIFs found</div>'; return; }
 
@@ -9499,7 +9840,7 @@ class HavenApp {
       let emojiDisplay = g.emoji;
       if (customMatch && this.customEmojis) {
         const ce = this.customEmojis.find(e => e.name === customMatch[1]);
-        if (ce) emojiDisplay = `<img src="${ce.url}" alt=":${ce.name}:" class="custom-emoji reaction-custom-emoji">`;
+        if (ce) emojiDisplay = `<img src="${this._escapeHtml(ce.url)}" alt=":${this._escapeHtml(ce.name)}:" class="custom-emoji reaction-custom-emoji">`;
       }
       return `<button class="reaction-badge${isOwn ? ' own' : ''}" data-emoji="${this._escapeHtml(g.emoji)}" title="${names}">${emojiDisplay} ${g.users.length}</button>`;
     }).join('');
@@ -9575,7 +9916,7 @@ class HavenApp {
         const customMatch = emoji.match(/^:([a-zA-Z0-9_-]+):$/);
         if (customMatch && this.customEmojis) {
           const ce = this.customEmojis.find(e => e.name === customMatch[1]);
-          if (ce) slot.innerHTML = `<img src="${ce.url}" alt="${emoji}" class="custom-emoji" style="width:20px;height:20px">`;
+          if (ce) slot.innerHTML = `<img src="${this._escapeHtml(ce.url)}" alt="${this._escapeHtml(emoji)}" class="custom-emoji" style="width:20px;height:20px">`;
           else slot.textContent = emoji;
         } else {
           slot.textContent = emoji;
@@ -9635,7 +9976,7 @@ class HavenApp {
         this.customEmojis.forEach(ce => {
           const btn = document.createElement('button');
           btn.className = 'reaction-full-btn';
-          btn.innerHTML = `<img src="${ce.url}" alt=":${ce.name}:" class="custom-emoji" style="width:22px;height:22px">`;
+          btn.innerHTML = `<img src="${this._escapeHtml(ce.url)}" alt=":${this._escapeHtml(ce.name)}:" class="custom-emoji" style="width:22px;height:22px">`;
           btn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (activeSlot !== null) {
@@ -9682,7 +10023,7 @@ class HavenApp {
       const customMatch = emoji.match(/^:([a-zA-Z0-9_-]+):$/);
       if (customMatch && this.customEmojis) {
         const ce = this.customEmojis.find(e => e.name === customMatch[1]);
-        if (ce) btn.innerHTML = `<img src="${ce.url}" alt="${emoji}" class="custom-emoji" style="width:20px;height:20px">`;
+        if (ce) btn.innerHTML = `<img src="${this._escapeHtml(ce.url)}" alt="${this._escapeHtml(emoji)}" class="custom-emoji" style="width:20px;height:20px">`;
         else btn.textContent = emoji;
       } else {
         btn.textContent = emoji;
@@ -9822,7 +10163,7 @@ class HavenApp {
           customMatching.forEach(ce => {
             const btn = document.createElement('button');
             btn.className = 'reaction-full-btn';
-            btn.innerHTML = `<img src="${ce.url}" alt=":${ce.name}:" title=":${ce.name}:" class="custom-emoji">`;
+            btn.innerHTML = `<img src="${this._escapeHtml(ce.url)}" alt=":${this._escapeHtml(ce.name)}:" title=":${this._escapeHtml(ce.name)}:" class="custom-emoji">`;
             btn.addEventListener('click', () => {
               this.socket.emit('add-reaction', { messageId: msgId, emoji: `:${ce.name}:` });
               panel.remove();
@@ -10298,8 +10639,8 @@ class HavenApp {
         result.innerHTML = `
           <div class="wizard-port-success">
             ✅ <strong>Your server is reachable from the internet!</strong><br>
-            Public IP: <code>${data.publicIp}</code><br>
-            Friends can connect at: <code>${location.protocol}//${data.publicIp}:${location.port || 3000}</code>
+            Public IP: <code>${this._escapeHtml(data.publicIp)}</code><br>
+            Friends can connect at: <code>${location.protocol}//${this._escapeHtml(data.publicIp)}:${location.port || 3000}</code>
           </div>`;
       } else {
         this._wizardPortResult = false;
@@ -10307,7 +10648,7 @@ class HavenApp {
         result.innerHTML = `
           <div class="wizard-port-fail">
             ⚠️ <strong>Port ${port} is not reachable from the internet.</strong><br>
-            ${data.publicIp ? `Your public IP is <code>${data.publicIp}</code>, but the port is blocked.` : data.error || 'Could not reach port.'}<br><br>
+            ${data.publicIp ? `Your public IP is <code>${this._escapeHtml(data.publicIp)}</code>, but the port is blocked.` : this._escapeHtml(data.error || 'Could not reach port.')}<br><br>
             <strong>To fix this:</strong>
             <ol>
               <li>Log into your router (usually <code>192.168.1.1</code>)</li>
@@ -10327,7 +10668,7 @@ class HavenApp {
       if (checking) checking.style.display = 'none';
       if (result) {
         result.style.display = 'block';
-        result.innerHTML = `<div class="wizard-port-fail">❌ Check failed: ${err.message}. You may be offline.</div>`;
+        result.innerHTML = `<div class="wizard-port-fail">❌ Check failed: ${this._escapeHtml(err.message)}. You may be offline.</div>`;
       }
       if (checkBtn) {
         checkBtn.textContent = '🔄 Retry';
@@ -11955,7 +12296,7 @@ class HavenApp {
     }
     container.innerHTML = this._allRoles.map(r =>
       `<div class="role-preview-item">
-        <span class="role-color-dot" style="background:${r.color || '#aaa'}"></span>
+        <span class="role-color-dot" style="background:${this._safeColor(r.color, '#aaa')}"></span>
         <span>${this._escapeHtml(r.name)}${r.auto_assign ? ' <span title="Auto-assigned to new members" style="font-size:10px;opacity:0.6">⚡</span>' : ''}</span>
         <span class="muted-text" style="font-size:11px;margin-left:auto">Lv.${r.level}</span>
       </div>`
@@ -11972,7 +12313,7 @@ class HavenApp {
     if (!list) return;
     list.innerHTML = this._allRoles.map(r =>
       `<div class="role-sidebar-item${this._selectedRoleId === r.id ? ' active' : ''}" data-role-id="${r.id}">
-        <span class="role-color-dot" style="background:${r.color || '#aaa'}"></span>
+        <span class="role-color-dot" style="background:${this._safeColor(r.color, '#aaa')}"></span>
         ${this._escapeHtml(r.name)}
       </div>`
     ).join('');
@@ -12028,15 +12369,8 @@ class HavenApp {
           <input type="checkbox" id="role-edit-auto-assign" ${role.auto_assign ? 'checked' : ''}>
         </label>
         <small class="muted-text" style="font-size:11px;">New users will automatically receive this role when they register or join a channel.</small>
-        <h5 class="settings-section-subtitle" style="margin-top:12px;">Permissions</h5>
-        ${allPerms.map(p => `
-          <label class="toggle-row">
-            <span>${permLabels[p] || p.replace(/_/g, ' ')}</span>
-            <input type="checkbox" class="role-perm-checkbox" data-perm="${p}" ${rolePerms.includes(p) ? 'checked' : ''}>
-          </label>
-        `).join('')}
         <div class="role-channel-access-section">
-          <h5 class="settings-section-subtitle">Channel Access</h5>
+          <h5 class="settings-section-subtitle" style="margin-top:12px;">Channel Access</h5>
           <label class="toggle-row">
             <span>Link channel access to this role</span>
             <input type="checkbox" id="role-edit-link-channel-access" ${role.link_channel_access ? 'checked' : ''}>
@@ -12049,6 +12383,13 @@ class HavenApp {
             <button class="btn-sm btn-accent rca-reapply-btn" id="rca-reapply-btn">🔄 Reapply Access to All Users</button>
           </div>
         </div>
+        <h5 class="settings-section-subtitle" style="margin-top:12px;">Permissions</h5>
+        ${allPerms.map(p => `
+          <label class="toggle-row">
+            <span>${permLabels[p] || p.replace(/_/g, ' ')}</span>
+            <input type="checkbox" class="role-perm-checkbox" data-perm="${p}" ${rolePerms.includes(p) ? 'checked' : ''}>
+          </label>
+        `).join('')}
         <div style="margin-top:12px;display:flex;gap:8px">
           <button class="btn-sm danger" id="delete-role-btn">Delete</button>
         </div>
@@ -12265,7 +12606,7 @@ class HavenApp {
       const badges = m.isAdmin
         ? '<span class="channel-roles-badge badge-admin"><span class="badge-dot" style="background:#e74c3c"></span>Admin</span>'
         : (m.roles || []).map(r =>
-            `<span class="channel-roles-badge"><span class="badge-dot" style="background:${r.color || '#aaa'}"></span>${this._escapeHtml(r.name)}<span class="badge-scope">${r.scope === 'channel' ? '📌 Channel' : '🌐 Server'}</span><span class="revoke-btn" data-uid="${m.id}" data-rid="${r.roleId}" data-scope="${r.scope}" title="Revoke">✕</span></span>`
+            `<span class="channel-roles-badge"><span class="badge-dot" style="background:${this._safeColor(r.color, '#aaa')}"></span>${this._escapeHtml(r.name)}<span class="badge-scope">${r.scope === 'channel' ? '📌 Channel' : '🌐 Server'}</span><span class="revoke-btn" data-uid="${m.id}" data-rid="${r.roleId}" data-scope="${r.scope}" title="Revoke">✕</span></span>`
           ).join('') || '<span class="channel-roles-no-role">No roles</span>';
 
       return `<div class="channel-roles-member${sel}" data-uid="${m.id}">
@@ -12329,7 +12670,7 @@ class HavenApp {
       currentDiv.innerHTML = '<span class="channel-roles-badge badge-admin"><span class="badge-dot" style="background:#e74c3c"></span>Admin</span>';
     } else if (member.roles.length) {
       currentDiv.innerHTML = member.roles.map(r =>
-        `<span class="channel-roles-badge"><span class="badge-dot" style="background:${r.color || '#aaa'}"></span>${this._escapeHtml(r.name)} <span class="badge-scope">${r.scope === 'channel' ? '📌 Channel' : '🌐 Server'}</span></span>`
+        `<span class="channel-roles-badge"><span class="badge-dot" style="background:${this._safeColor(r.color, '#aaa')}"></span>${this._escapeHtml(r.name)} <span class="badge-scope">${r.scope === 'channel' ? '📌 Channel' : '🌐 Server'}</span></span>`
       ).join('');
     } else {
       currentDiv.innerHTML = '<span style="font-size:0.78rem;color:var(--text-muted)">No roles assigned</span>';
@@ -12380,7 +12721,7 @@ class HavenApp {
     }
     list.innerHTML = this._allRoles.map(r =>
       `<div class="channel-roles-role-item${this._channelRolesSelectedRole === r.id ? ' active' : ''}" data-role-id="${r.id}">
-        <span class="role-color-dot" style="background:${r.color || '#aaa'}"></span>
+        <span class="role-color-dot" style="background:${this._safeColor(r.color, '#aaa')}"></span>
         <span class="channel-roles-role-name">${this._escapeHtml(r.name)}</span>
         <span class="channel-roles-role-level">Lv.${r.level}</span>
       </div>`

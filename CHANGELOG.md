@@ -11,6 +11,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Haven uses [Sema
 
 ---
 
+## [2.2.5] — 2026-02-23
+
+### Security
+- **Webhook avatar_url validation** — webhook POST `avatar_url` field now requires `http://` or `https://` protocol, blocking `data:` URIs and other non-HTTP schemes that could be used for IP tracking.
+
+### Fixed
+- **Missing express-rate-limit import** — the webhook rate limiter referenced `rateLimit` without a require, causing a crash on server startup.
+
+### Removed
+- **Desktop app code removed from server** — the `desktop/` directory, `build-desktop.bat`, desktop API routes (`/api/desktop/*`), desktop promotion popup, and all desktop-related UI elements have been surgically removed. The desktop app will be rebuilt as a separate project in its own repository.
+
+### Changed
+- Website & docs updated to v2.2.5.
+
+---
+
 ## [2.2.4] — 2026-02-22
 
 ### Security

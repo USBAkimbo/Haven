@@ -53,7 +53,7 @@ webpush.setVapidDetails(vapidEmail, process.env.VAPID_PUBLIC_KEY, process.env.VA
 
 const { initDatabase } = require('./src/database');
 const { router: authRoutes, authLimiter, verifyToken } = require('./src/auth');
-const { setupSocketHandlers } = require('./src/socketHandlers');
+const { setupSocketHandlers, sanitizeText } = require('./src/socketHandlers');
 const { startTunnel, stopTunnel, getTunnelStatus, registerProcessCleanup } = require('./src/tunnel');
 
 const app = express();
@@ -129,7 +129,7 @@ app.use('/uploads', express.static(UPLOADS_DIR, {
   }
 }));
 
-// ── File uploads (images max 5 MB, general files max 25 MB) ──
+// ── File uploads (DB-configurable limit, avatar max 5 MB) ──
 const uploadDir = UPLOADS_DIR;
 
 const uploadStorage = multer.diskStorage({
@@ -140,10 +140,10 @@ const uploadStorage = multer.diskStorage({
   }
 });
 
-// Image-only upload (existing endpoint)
+// Image-only upload — multer cap is high; real limit enforced per-request from DB
 const upload = multer({
   storage: uploadStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (/^image\/(jpeg|png|gif|webp)$/.test(file.mimetype)) cb(null, true);
     else cb(new Error('Only images allowed (jpg, png, gif, webp)'));
@@ -539,6 +539,14 @@ app.post('/api/upload', uploadLimiter, (req, res) => {
   upload.single('image')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    // Enforce DB-configurable max upload size (same setting as general file uploads)
+    const maxMbRow = getDb().prepare("SELECT value FROM server_settings WHERE key = 'max_upload_mb'").get();
+    const maxBytes = (parseInt(maxMbRow?.value) || 25) * 1024 * 1024;
+    if (req.file.size > maxBytes) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: `Image too large (max ${maxMbRow?.value || 25} MB)` });
+    }
 
     // Validate file magic bytes (don't trust MIME type alone)
     try {
@@ -1176,7 +1184,9 @@ app.post('/api/high-scores', express.json(), (req, res) => {
 // ═══════════════════════════════════════════════════════════
 // WEBHOOK / BOT INTEGRATION — incoming message endpoint
 // ═══════════════════════════════════════════════════════════
-app.post('/api/webhooks/:token', express.json({ limit: '64kb' }), (req, res) => {
+const rateLimit = require('express-rate-limit');
+const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, message: { error: 'Rate limit exceeded' } });
+app.post('/api/webhooks/:token', webhookLimiter, express.json({ limit: '64kb' }), (req, res) => {
   const { getDb } = require('./src/database');
   const db = getDb();
   const { token } = req.params;
@@ -1193,14 +1203,18 @@ app.post('/api/webhooks/:token', express.json({ limit: '64kb' }), (req, res) => 
     return res.status(404).json({ error: 'Webhook not found or inactive' });
   }
 
-  const content = typeof req.body.content === 'string' ? req.body.content.trim() : '';
+  const content = typeof req.body.content === 'string' ? sanitizeText(req.body.content.trim()) : '';
   if (!content || content.length > 4000) {
     return res.status(400).json({ error: 'Content required (max 4000 chars)' });
   }
 
   // Optional overrides per-message
-  const username = typeof req.body.username === 'string' ? req.body.username.trim().slice(0, 32) : webhook.name;
-  const avatarUrl = typeof req.body.avatar_url === 'string' ? req.body.avatar_url.trim().slice(0, 512) : webhook.avatar_url;
+  const username = typeof req.body.username === 'string' ? sanitizeText(req.body.username.trim().slice(0, 32)) : webhook.name;
+  let avatarUrl = webhook.avatar_url;
+  if (typeof req.body.avatar_url === 'string') {
+    const trimmed = req.body.avatar_url.trim().slice(0, 512);
+    avatarUrl = /^https?:\/\//i.test(trimmed) ? trimmed : null;
+  }
 
   // Insert the message into the DB
   const result = db.prepare(

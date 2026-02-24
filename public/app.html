@@ -61,21 +61,43 @@
         </div>
 
         <div class="sidebar-mod-container" id="sidebar-mod-container">
+          <!-- Mobile server bubbles (visible only on mobile) -->
+          <div class="sidebar-section mobile-servers-section" id="mobile-servers-section">
+            <h5 class="section-label mobile-servers-toggle" id="mobile-servers-toggle" style="cursor:pointer;user-select:none">
+              <span class="collapse-toggle-arrow" id="mobile-servers-arrow">▾</span>
+              <span class="section-label-text" style="flex:1">Servers</span>
+            </h5>
+            <div class="mobile-servers-row" id="mobile-servers-row">
+              <div class="mobile-servers-scroll" id="mobile-servers-scroll"></div>
+              <button class="mobile-srv-add-btn" id="mobile-srv-add-btn" title="Add Server">+</button>
+            </div>
+          </div>
+
           <div class="sidebar-section" data-mod-id="join">
-            <h5 class="section-label">Join a Channel</h5>
-            <div class="input-row">
-              <input type="text" id="channel-code-input"
-                     placeholder="Enter code..." maxlength="8" spellcheck="false">
-              <button id="join-channel-btn" class="btn-sm">Join</button>
+            <h5 class="section-label collapsible-section-toggle" id="join-section-toggle" style="cursor:pointer;user-select:none">
+              <span class="collapse-toggle-arrow" id="join-section-arrow">▾</span>
+              <span class="section-label-text" style="flex:1">Join a Channel</span>
+            </h5>
+            <div class="collapsible-section-body" id="join-section-body">
+              <div class="input-row">
+                <input type="text" id="channel-code-input"
+                       placeholder="Enter code..." maxlength="8" spellcheck="false">
+                <button id="join-channel-btn" class="btn-sm">Join</button>
+              </div>
             </div>
           </div>
 
           <div class="sidebar-section" id="admin-controls" data-mod-id="create" style="display:none">
-            <h5 class="section-label">Create Channel</h5>
-            <div class="input-row">
-              <input type="text" id="new-channel-name"
-                     placeholder="Channel name..." maxlength="50">
-              <button id="create-channel-btn" class="btn-sm btn-accent">+</button>
+            <h5 class="section-label collapsible-section-toggle" id="create-section-toggle" style="cursor:pointer;user-select:none">
+              <span class="collapse-toggle-arrow" id="create-section-arrow">▾</span>
+              <span class="section-label-text" style="flex:1">Create Channel</span>
+            </h5>
+            <div class="collapsible-section-body" id="create-section-body">
+              <div class="input-row">
+                <input type="text" id="new-channel-name"
+                       placeholder="Channel name..." maxlength="50">
+                <button id="create-channel-btn" class="btn-sm btn-accent">+</button>
+              </div>
             </div>
           </div>
 
@@ -258,18 +280,6 @@
             <span class="update-pulse"></span>
             <span class="update-text">Update Available</span>
           </a>
-          <!-- Desktop app button (hidden when inside desktop app) -->
-          <button id="desktop-app-btn" class="desktop-app-btn" style="display:none" title="Get the Haven Desktop App">
-            <span class="desktop-app-icon">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                <line x1="8" y1="21" x2="16" y2="21"/>
-                <line x1="12" y1="17" x2="12" y2="21"/>
-              </svg>
-            </span>
-            <span class="desktop-app-label">Desktop App</span>
-            <span class="desktop-app-badge">NEW</span>
-          </button>
           <!-- Spacer pushes voice controls to the right -->
           <div style="flex:1"></div>
           <!-- Right-side: dynamic indicators, then voice (always furthest right) -->
@@ -436,6 +446,20 @@
         </div>
         <!-- Voice settings sub-panel (slides up above controls) -->
         <div id="voice-settings-panel" class="voice-settings-panel" style="display:none">
+          <div class="voice-settings-section-label">🎧 Audio Devices</div>
+          <div class="voice-settings-row">
+            <label class="voice-settings-label">Input</label>
+            <select id="voice-input-device" class="voice-settings-select">
+              <option value="">Default Microphone</option>
+            </select>
+          </div>
+          <div class="voice-settings-row">
+            <label class="voice-settings-label">Output</label>
+            <select id="voice-output-device" class="voice-settings-select">
+              <option value="">Default Speaker</option>
+            </select>
+          </div>
+          <div class="voice-settings-divider"></div>
           <div class="voice-settings-row">
             <label class="voice-settings-label">🤫 Noise Suppression</label>
             <input type="range" id="voice-ns-slider" class="ns-slider" min="0" max="100" value="10" title="Noise gate: 0 = off, 100 = aggressive">
@@ -472,7 +496,6 @@
           <button id="voice-mute-btn" class="voice-panel-btn" title="Mute">🎙️</button>
           <button id="voice-deafen-btn" class="voice-panel-btn" title="Deafen">🔊</button>
           <button id="screen-share-btn" class="voice-panel-btn" title="Share Screen">🖥️</button>
-          <button id="music-share-btn" class="voice-panel-btn" title="Listen Together">🎵</button>
           <button id="voice-settings-toggle" class="voice-panel-btn" title="Voice Settings">⚙️</button>
           <span class="voice-panel-divider"></span>
           <button id="voice-leave-sidebar-btn" class="voice-panel-btn voice-panel-leave" title="Leave Voice">✕</button>
@@ -1712,6 +1735,5 @@
   <script src="/js/modmode.js?v=1.8.0"></script>
   <script src="/js/e2e.js?v=2.1.0"></script>
   <script src="/js/app.js?v=2.1.0"></script>
-  <script src="/js/desktop-promo.js?v=1.0.0"></script>
 </body>
 </html>
