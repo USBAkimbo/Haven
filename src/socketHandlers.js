@@ -906,7 +906,10 @@ function setupSocketHandlers(io, db) {
         try {
           const autoRoles = db.prepare('SELECT id FROM roles WHERE auto_assign = 1').all();
           const insertAutoRole = db.prepare('INSERT OR IGNORE INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, NULL, NULL)');
-          for (const ar of autoRoles) { insertAutoRole.run(socket.user.id, ar.id); }
+          for (const ar of autoRoles) {
+            insertAutoRole.run(socket.user.id, ar.id);
+            applyRoleChannelAccess(ar.id, socket.user.id, 'grant');
+          }
         } catch { /* non-critical */ }
       }
 
@@ -2489,11 +2492,31 @@ function setupSocketHandlers(io, db) {
         return socket.emit('error-msg', 'User is not currently online in this channel (use ban instead)');
       }
 
+      // Permanently revoke channel membership so kicked user can't rejoin
+      if (kickCh) {
+        db.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?').run(kickCh.id, data.userId);
+        // Also revoke from sub-channels
+        const subs = db.prepare('SELECT id FROM channels WHERE parent_channel_id = ?').all(kickCh.id);
+        const delSub = db.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?');
+        subs.forEach(s => delSub.run(s.id, data.userId));
+      }
+
       // Emit kicked event to target
       io.to(targetInfo.socketId).emit('kicked', {
         channelCode: code,
         reason: typeof data.reason === 'string' ? data.reason.trim().slice(0, 200) : ''
       });
+
+      // Force the kicked user's socket to leave the room and refresh their channel list
+      const targetSockets = [...io.sockets.sockets.values()].filter(s => s.user && s.user.id === data.userId);
+      for (const ts of targetSockets) {
+        ts.leave(`channel:${code}`);
+        if (kickCh) {
+          const subs = db.prepare('SELECT code FROM channels WHERE parent_channel_id = ?').all(kickCh.id);
+          subs.forEach(sub => ts.leave(`channel:${sub.code}`));
+        }
+        ts.emit('channels-list', getEnrichedChannels(data.userId, false, (room) => ts.join(room)));
+      }
 
       // Remove from channel tracking
       channelRoom.delete(data.userId);
@@ -3751,7 +3774,10 @@ function setupSocketHandlers(io, db) {
       try {
         const autoRoles = db.prepare('SELECT id FROM roles WHERE auto_assign = 1').all();
         const insertAutoRole = db.prepare('INSERT OR IGNORE INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, NULL, NULL)');
-        for (const ar of autoRoles) { insertAutoRole.run(targetUserId, ar.id); }
+        for (const ar of autoRoles) {
+          insertAutoRole.run(targetUserId, ar.id);
+          applyRoleChannelAccess(ar.id, targetUserId, 'grant');
+        }
       } catch { /* non-critical */ }
 
       // If the target user is online, refresh their channel list

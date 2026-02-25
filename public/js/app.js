@@ -3775,17 +3775,25 @@ class HavenApp {
   }
 
   // ═══════════════════════════════════════════════════════
-  // CUSTOM SOUND MANAGEMENT (Admin)
+  // SOUND MANAGER (Full Popout — Admin + User)
   // ═══════════════════════════════════════════════════════
 
   _setupSoundManagement() {
-    // Open sound management modal
+    this.customSounds = [];
+    this._soundHotkeys = JSON.parse(localStorage.getItem('haven_sound_hotkeys') || '{}'); // { hotkey: soundName }
+    this._recordingHotkeyFor = null; // soundName currently recording hotkey
+
+    // Open from admin "Manage Sounds" button
     const openBtn = document.getElementById('open-sound-manager-btn');
     if (openBtn) {
-      openBtn.addEventListener('click', () => {
-        document.getElementById('sound-modal').style.display = 'flex';
-      });
+      openBtn.addEventListener('click', () => this._openSoundModal('manage'));
     }
+    // Open from user "Sound Manager" button
+    const openUserBtn = document.getElementById('open-sound-manager-user-btn');
+    if (openUserBtn) {
+      openUserBtn.addEventListener('click', () => this._openSoundModal('soundboard'));
+    }
+
     // Close sound modal
     document.getElementById('close-sound-modal-btn')?.addEventListener('click', () => {
       document.getElementById('sound-modal').style.display = 'none';
@@ -3794,45 +3802,135 @@ class HavenApp {
       if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
     });
 
+    // Tab switching
+    document.querySelectorAll('.sound-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.sound-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.sound-tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        const target = document.getElementById(`sound-tab-${tab.dataset.tab}`);
+        if (target) target.classList.add('active');
+      });
+    });
+
+    // Upload button (admin)
     const uploadBtn = document.getElementById('sound-upload-btn');
     const fileInput = document.getElementById('sound-file-input');
     const nameInput = document.getElementById('sound-name-input');
-    if (!uploadBtn || !fileInput) return;
+    if (uploadBtn && fileInput) {
+      uploadBtn.addEventListener('click', async () => {
+        const file = fileInput.files[0];
+        const name = nameInput ? nameInput.value.trim() : '';
+        if (!file) return this._showToast('Select an audio file', 'error');
+        if (!name) return this._showToast('Enter a sound name', 'error');
+        if (file.size > 1024 * 1024) return this._showToast('Sound file too large (max 1 MB)', 'error');
 
-    uploadBtn.addEventListener('click', async () => {
-      const file = fileInput.files[0];
-      const name = nameInput ? nameInput.value.trim() : '';
-      if (!file) return this._showToast('Select an audio file', 'error');
-      if (!name) return this._showToast('Enter a sound name', 'error');
-      if (file.size > 1024 * 1024) return this._showToast('Sound file too large (max 1 MB)', 'error');
+        const formData = new FormData();
+        formData.append('sound', file);
+        formData.append('name', name);
 
-      const formData = new FormData();
-      formData.append('sound', file);
-      formData.append('name', name);
-
-      try {
-        this._showToast('Uploading sound...', 'info');
-        const res = await fetch('/api/upload-sound', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${this.token}` },
-          body: formData
-        });
-        if (!res.ok) {
-          let errMsg = `Upload failed (${res.status})`;
-          try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
-          return this._showToast(errMsg, 'error');
+        try {
+          this._showToast('Uploading sound...', 'info');
+          const res = await fetch('/api/upload-sound', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${this.token}` },
+            body: formData
+          });
+          if (!res.ok) {
+            let errMsg = `Upload failed (${res.status})`;
+            try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
+            return this._showToast(errMsg, 'error');
+          }
+          this._showToast(`Sound "${name}" uploaded!`, 'success');
+          fileInput.value = '';
+          nameInput.value = '';
+          this._loadCustomSounds();
+        } catch {
+          this._showToast('Upload failed', 'error');
         }
-        this._showToast(`Sound "${name}" uploaded!`, 'success');
-        fileInput.value = '';
-        nameInput.value = '';
-        this._loadCustomSounds();
-      } catch {
-        this._showToast('Upload failed', 'error');
+      });
+    }
+
+    // Soundboard search
+    const searchInput = document.getElementById('soundboard-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', () => this._renderSoundboard(searchInput.value.trim()));
+    }
+
+    // Global hotkey listener
+    document.addEventListener('keydown', (e) => {
+      // If recording a hotkey for a sound
+      if (this._recordingHotkeyFor) {
+        e.preventDefault();
+        const hk = this._buildHotkeyString(e);
+        if (hk === 'Escape') {
+          this._recordingHotkeyFor = null;
+          this._renderSoundboard();
+          return;
+        }
+        // Remove any old binding with same hotkey
+        Object.keys(this._soundHotkeys).forEach(k => {
+          if (this._soundHotkeys[k] === this._recordingHotkeyFor) delete this._soundHotkeys[k];
+        });
+        this._soundHotkeys[hk] = this._recordingHotkeyFor;
+        localStorage.setItem('haven_sound_hotkeys', JSON.stringify(this._soundHotkeys));
+        this._showToast(`Hotkey [${hk}] set for "${this._recordingHotkeyFor}"`, 'success');
+        this._recordingHotkeyFor = null;
+        this._renderSoundboard();
+        return;
+      }
+      // Check if a bound hotkey was pressed (only when not typing in inputs)
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const hk = this._buildHotkeyString(e);
+      const soundName = this._soundHotkeys[hk];
+      if (soundName && this.customSounds) {
+        const s = this.customSounds.find(cs => cs.name === soundName);
+        if (s) {
+          e.preventDefault();
+          this._playSoundFile(s.url);
+        }
       }
     });
 
     // Load custom sounds on init
     this._loadCustomSounds();
+  }
+
+  _buildHotkeyString(e) {
+    const parts = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+    if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) parts.push(key);
+    return parts.join('+');
+  }
+
+  _openSoundModal(tab = 'soundboard') {
+    const modal = document.getElementById('sound-modal');
+    if (!modal) return;
+    // Show admin tab only if user is admin
+    const adminTab = modal.querySelector('.sound-tab-admin');
+    if (adminTab) adminTab.style.display = this.user?.is_admin ? '' : 'none';
+    // Activate requested tab
+    modal.querySelectorAll('.sound-tab').forEach(t => t.classList.remove('active'));
+    modal.querySelectorAll('.sound-tab-content').forEach(c => c.classList.remove('active'));
+    const tabBtn = modal.querySelector(`.sound-tab[data-tab="${tab}"]`);
+    const tabContent = document.getElementById(`sound-tab-${tab}`);
+    if (tabBtn) tabBtn.classList.add('active');
+    if (tabContent) tabContent.classList.add('active');
+    modal.style.display = 'flex';
+    this._renderSoundboard();
+    this._renderAssignTab();
+  }
+
+  _playSoundFile(url) {
+    try {
+      const audio = new Audio(url);
+      audio.volume = Math.max(0, Math.min(1, this.notifications.volume * this.notifications.volume));
+      audio.play().catch(() => {});
+    } catch { /* audio not available */ }
   }
 
   async _loadCustomSounds() {
@@ -3845,19 +3943,29 @@ class HavenApp {
       const sounds = data.sounds || [];
       this.customSounds = sounds; // [{name, url}]
 
-      // Update all sound select dropdowns with custom sounds
+      // Update all notification sound select dropdowns
       this._updateSoundSelects(sounds);
 
       // Render admin sound list
       this._renderSoundList(sounds);
+
+      // Render soundboard if modal is visible
+      if (document.getElementById('sound-modal')?.style.display === 'flex') {
+        this._renderSoundboard();
+        this._renderAssignTab();
+      }
     } catch { /* ignore */ }
   }
 
   _updateSoundSelects(sounds) {
-    const selects = ['notif-msg-sound', 'notif-mention-sound'];
+    // Update ALL 5 notification selects with custom sounds
+    const selects = ['notif-msg-sound', 'notif-sent-sound', 'notif-mention-sound', 'notif-join-sound', 'notif-leave-sound'];
     selects.forEach(id => {
       const sel = document.getElementById(id);
       if (!sel) return;
+
+      // Remember current value
+      const currentVal = sel.value;
 
       // Remove old custom options
       sel.querySelectorAll('option[data-custom]').forEach(o => o.remove());
@@ -3882,8 +3990,7 @@ class HavenApp {
       }
 
       // Restore value
-      const currentVal = sel.value;
-      if (currentVal) sel.value = currentVal;
+      sel.value = currentVal;
     });
   }
 
@@ -3897,19 +4004,78 @@ class HavenApp {
     }
 
     list.innerHTML = sounds.map(s => `
-      <div class="custom-sound-item">
+      <div class="custom-sound-item" data-name="${this._escapeHtml(s.name)}">
         <span class="custom-sound-name">${this._escapeHtml(s.name)}</span>
         <button class="btn-xs sound-preview-btn" data-url="${this._escapeHtml(s.url)}" title="Preview">▶</button>
+        <button class="btn-xs sound-rename-btn" data-name="${this._escapeHtml(s.name)}" title="Rename">✏️</button>
         <button class="btn-xs sound-delete-btn" data-name="${this._escapeHtml(s.name)}" title="Delete">🗑️</button>
       </div>
     `).join('');
 
     // Preview buttons
     list.querySelectorAll('.sound-preview-btn').forEach(btn => {
+      btn.addEventListener('click', () => this._playSoundFile(btn.dataset.url));
+    });
+
+    // Rename buttons
+    list.querySelectorAll('.sound-rename-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const audio = new Audio(btn.dataset.url);
-        audio.volume = this.notifications.volume;
-        audio.play().catch(() => {});
+        const item = btn.closest('.custom-sound-item');
+        const nameSpan = item.querySelector('.custom-sound-name');
+        const oldName = btn.dataset.name;
+        // Replace span with input
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = oldName;
+        input.maxLength = 30;
+        input.className = 'custom-sound-name-input';
+        nameSpan.replaceWith(input);
+        input.focus();
+        input.select();
+
+        const doRename = async () => {
+          const newName = input.value.trim();
+          if (!newName || newName === oldName) {
+            // Revert
+            const span = document.createElement('span');
+            span.className = 'custom-sound-name';
+            span.textContent = oldName;
+            input.replaceWith(span);
+            return;
+          }
+          try {
+            const res = await fetch(`/api/sounds/${encodeURIComponent(oldName)}`, {
+              method: 'PATCH',
+              headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ newName })
+            });
+            if (res.ok) {
+              // Update hotkey bindings
+              Object.keys(this._soundHotkeys).forEach(k => {
+                if (this._soundHotkeys[k] === oldName) this._soundHotkeys[k] = newName;
+              });
+              localStorage.setItem('haven_sound_hotkeys', JSON.stringify(this._soundHotkeys));
+              this._showToast(`Renamed to "${newName}"`, 'success');
+              this._loadCustomSounds();
+            } else {
+              let errMsg = 'Rename failed';
+              try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
+              this._showToast(errMsg, 'error');
+              const span = document.createElement('span');
+              span.className = 'custom-sound-name';
+              span.textContent = oldName;
+              input.replaceWith(span);
+            }
+          } catch {
+            this._showToast('Rename failed', 'error');
+          }
+        };
+
+        input.addEventListener('blur', doRename);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+          if (e.key === 'Escape') { input.value = oldName; input.blur(); }
+        });
       });
     });
 
@@ -3924,6 +4090,11 @@ class HavenApp {
           });
           if (res.ok) {
             this._showToast(`Sound "${name}" deleted`, 'success');
+            // Clean up hotkey
+            Object.keys(this._soundHotkeys).forEach(k => {
+              if (this._soundHotkeys[k] === name) delete this._soundHotkeys[k];
+            });
+            localStorage.setItem('haven_sound_hotkeys', JSON.stringify(this._soundHotkeys));
             this._loadCustomSounds();
           } else {
             this._showToast('Delete failed', 'error');
@@ -3931,6 +4102,153 @@ class HavenApp {
         } catch {
           this._showToast('Delete failed', 'error');
         }
+      });
+    });
+  }
+
+  // ── Soundboard Tab ─────────────────────────────────────
+
+  _renderSoundboard(filter = '') {
+    const grid = document.getElementById('soundboard-grid');
+    if (!grid) return;
+    const sounds = (this.customSounds || []).filter(s =>
+      !filter || s.name.toLowerCase().includes(filter.toLowerCase())
+    );
+    if (sounds.length === 0) {
+      grid.innerHTML = `<p class="muted-text" style="grid-column:1/-1">${filter ? 'No matching sounds' : 'No sounds available'}</p>`;
+      return;
+    }
+
+    // Reverse lookup: soundName → hotkey
+    const hotkeyMap = {};
+    Object.entries(this._soundHotkeys).forEach(([hk, name]) => { hotkeyMap[name] = hk; });
+
+    grid.innerHTML = sounds.map(s => {
+      const hk = hotkeyMap[s.name];
+      const hotkeyHtml = hk
+        ? `<span class="sb-hotkey-row">
+             <span class="sb-hotkey">${this._escapeHtml(hk)}</span>
+             <span class="sb-hotkey-clear" data-sound="${this._escapeHtml(s.name)}" title="Remove hotkey">&times;</span>
+           </span>`
+        : `<span class="sb-hotkey-set" data-sound="${this._escapeHtml(s.name)}">Set hotkey</span>`;
+      return `<button class="soundboard-btn" data-name="${this._escapeHtml(s.name)}" data-url="${this._escapeHtml(s.url)}">
+        <span class="sb-name">${this._escapeHtml(s.name)}</span>
+        ${hotkeyHtml}
+      </button>`;
+    }).join('');
+
+    // Click the main button area to play
+    grid.querySelectorAll('.soundboard-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        // Don't play if clicking hotkey controls
+        if (e.target.closest('.sb-hotkey-clear') || e.target.closest('.sb-hotkey-set')) return;
+        this._playSoundFile(btn.dataset.url);
+      });
+    });
+
+    // "Set hotkey" link
+    grid.querySelectorAll('.sb-hotkey-set').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const name = el.dataset.sound;
+        this._recordingHotkeyFor = name;
+        const btn = el.closest('.soundboard-btn');
+        if (btn) btn.classList.add('hotkey-recording');
+        this._showToast(`Press a key combo for "${name}" (Esc to cancel)`, 'info');
+      });
+    });
+
+    // "×" remove hotkey button
+    grid.querySelectorAll('.sb-hotkey-clear').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const name = el.dataset.sound;
+        const hk = hotkeyMap[name];
+        if (hk) {
+          delete this._soundHotkeys[hk];
+          localStorage.setItem('haven_sound_hotkeys', JSON.stringify(this._soundHotkeys));
+          this._showToast(`Hotkey removed for "${name}"`, 'info');
+          this._renderSoundboard(document.getElementById('soundboard-search')?.value?.trim() || '');
+        }
+      });
+    });
+
+    // Right-click also starts hotkey recording (as a secondary method)
+    grid.querySelectorAll('.soundboard-btn').forEach(btn => {
+      btn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        if (e.target.closest('.sb-hotkey-clear')) return; // let × handle it
+        const name = btn.dataset.name;
+        this._recordingHotkeyFor = name;
+        btn.classList.add('hotkey-recording');
+        this._showToast(`Press a key combo for "${name}" (Esc to cancel)`, 'info');
+      });
+    });
+  }
+
+  // ── Assign to Events Tab ───────────────────────────────
+
+  _renderAssignTab() {
+    const builtinSounds = [
+      { value: 'ping', label: 'Ping' }, { value: 'chime', label: 'Chime' },
+      { value: 'blip', label: 'Blip' }, { value: 'bell', label: 'Bell' },
+      { value: 'drop', label: 'Drop' }, { value: 'alert', label: 'Alert' },
+      { value: 'chord', label: 'Chord' }, { value: 'swoosh', label: 'Swoosh' },
+      { value: 'none', label: 'None' },
+    ];
+    const customs = (this.customSounds || []).map(s => ({
+      value: `custom:${s.name}`, label: s.name, url: s.url, isCustom: true
+    }));
+
+    const events = [
+      { selectId: 'assign-msg-sound', event: 'message', notifSelect: 'notif-msg-sound' },
+      { selectId: 'assign-sent-sound', event: 'sent', notifSelect: 'notif-sent-sound' },
+      { selectId: 'assign-mention-sound', event: 'mention', notifSelect: 'notif-mention-sound' },
+      { selectId: 'assign-join-sound', event: 'join', notifSelect: 'notif-join-sound' },
+      { selectId: 'assign-leave-sound', event: 'leave', notifSelect: 'notif-leave-sound' },
+    ];
+
+    events.forEach(({ selectId, event, notifSelect }) => {
+      const sel = document.getElementById(selectId);
+      if (!sel) return;
+
+      // Build options
+      sel.innerHTML = '';
+      const builtinGroup = document.createElement('optgroup');
+      builtinGroup.label = '🔊 Built-in';
+      builtinSounds.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.value;
+        opt.textContent = s.label;
+        builtinGroup.appendChild(opt);
+      });
+      sel.appendChild(builtinGroup);
+
+      if (customs.length > 0) {
+        const customGroup = document.createElement('optgroup');
+        customGroup.label = '🎵 Custom';
+        customs.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.value;
+          opt.textContent = s.label;
+          opt.dataset.url = s.url;
+          customGroup.appendChild(opt);
+        });
+        sel.appendChild(customGroup);
+      }
+
+      // Sync with current notification setting
+      sel.value = this.notifications.sounds[event] || 'none';
+
+      // On change, update the main notification select + play preview
+      sel.addEventListener('change', () => {
+        const val = sel.value;
+        this.notifications.setSound(event, val);
+        // Sync the main settings select
+        const mainSel = document.getElementById(notifSelect);
+        if (mainSel) mainSel.value = val;
+        // Play preview
+        this.notifications.play(event);
       });
     });
   }

@@ -3844,6 +3844,11 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
 }
 .custom-sound-item:last-child { border-bottom: none; }
 .custom-sound-name { flex: 1; font-size: 13px; color: var(--text-primary); }
+.custom-sound-name-input {
+  flex: 1; font-size: 12px; padding: 2px 6px; border-radius: 4px;
+  border: 1px solid var(--accent); background: var(--bg-input);
+  color: var(--text-primary); outline: none;
+}
 .btn-xs {
   padding: 2px 8px;
   font-size: 11px;
@@ -3855,6 +3860,62 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   transition: background 0.15s;
 }
 .btn-xs:hover { background: var(--bg-tertiary); }
+
+/* ── Sound Manager Popout ─────────────────────────────────── */
+.sound-modal-tabs {
+  display: flex; gap: 4px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--border); padding-bottom: 8px;
+}
+.sound-tab {
+  padding: 5px 12px; font-size: 12px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border: 1px solid var(--border); border-bottom: none; background: var(--bg-tertiary);
+  color: var(--text-secondary); cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.sound-tab:hover { background: var(--bg-hover); color: var(--text-primary); }
+.sound-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.sound-tab-content { display: none; }
+.sound-tab-content.active { display: block; }
+
+/* Soundboard grid */
+.soundboard-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px; max-height: 280px; overflow-y: auto; padding: 4px 0;
+}
+.soundboard-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; padding: 10px 6px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-secondary);
+  color: var(--text-primary); cursor: pointer; min-height: 60px;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.soundboard-btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+.soundboard-btn:active { transform: scale(0.96); }
+.soundboard-btn .sb-name { font-size: 12px; font-weight: 600; text-align: center; word-break: break-word; }
+.soundboard-btn .sb-hotkey {
+  font-size: 9px; color: var(--text-muted); background: var(--bg-tertiary);
+  padding: 1px 6px; border-radius: 3px; font-family: var(--font-mono);
+}
+.sb-hotkey-row {
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.sb-hotkey-clear {
+  font-size: 13px; line-height: 1; color: var(--text-muted); cursor: pointer;
+  padding: 0 2px; border-radius: 3px; transition: color 0.15s, background 0.15s;
+}
+.sb-hotkey-clear:hover { color: var(--danger); background: rgba(240,71,71,0.15); }
+.sb-hotkey-set {
+  font-size: 9px; color: var(--accent); cursor: pointer; opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.sb-hotkey-set:hover { opacity: 1; text-decoration: underline; }
+.sound-search-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.sound-assign-list { display: flex; flex-direction: column; gap: 4px; }
+.sound-assign-select { min-width: 140px; }
+
+/* Hotkey recording visual */
+.hotkey-recording { animation: hotkey-pulse 0.6s ease infinite alternate; }
+@keyframes hotkey-pulse { from { box-shadow: 0 0 0 2px var(--accent-glow); } to { box-shadow: 0 0 8px 4px var(--accent-glow); } }
+
 
 .message-body { flex: 1; min-width: 0; }
 
@@ -11151,6 +11212,71 @@ ul.chat-list { list-style-type: disc; }
 [data-fontsize="x-large"] .voice-user-item .user-item-name { font-size: 19px; }
 [data-fontsize="x-large"] .compact-time         { font-size: 12.5px; }
 [data-fontsize="x-large"] .message-compact .message-content { font-size: 20px; }
+
+/* ── Font Size: Settings / Sub-menus ─────────────────────── */
+
+/* Small */
+[data-fontsize="small"] .settings-hint          { font-size: 8.5px; }
+[data-fontsize="small"] .settings-nav-item      { font-size: 10px; }
+[data-fontsize="small"] .settings-nav-group     { font-size: 8.5px; }
+[data-fontsize="small"] .btn-sm                 { font-size: 10px; }
+[data-fontsize="small"] .btn-sm.btn-accent,
+[data-fontsize="small"] .btn-sm.btn-danger      { font-size: 13px; }
+[data-fontsize="small"] .toggle-row,
+[data-fontsize="small"] .volume-row,
+[data-fontsize="small"] .select-row             { font-size: 10px; }
+[data-fontsize="small"] .select-row select      { font-size: 9.5px; }
+[data-fontsize="small"] .settings-text-input    { font-size: 11px; }
+[data-fontsize="small"] .settings-number-input  { font-size: 10px; }
+[data-fontsize="small"] .custom-sound-name      { font-size: 11px; }
+[data-fontsize="small"] .password-change-form input { font-size: 11px; }
+[data-fontsize="small"] .status-bar             { font-size: 10px; }
+[data-fontsize="small"] .status-bar .label,
+[data-fontsize="small"] .status-bar .value      { font-size: 10px; }
+[data-fontsize="small"] .context-menu           { font-size: 11px; }
+[data-fontsize="small"] .online-overlay-title   { font-size: 9px; }
+
+/* Large */
+[data-fontsize="large"] .settings-hint          { font-size: 13px; }
+[data-fontsize="large"] .settings-nav-item      { font-size: 15px; }
+[data-fontsize="large"] .settings-nav-group     { font-size: 12px; }
+[data-fontsize="large"] .btn-sm                 { font-size: 15px; }
+[data-fontsize="large"] .btn-sm.btn-accent,
+[data-fontsize="large"] .btn-sm.btn-danger      { font-size: 18px; }
+[data-fontsize="large"] .toggle-row,
+[data-fontsize="large"] .volume-row,
+[data-fontsize="large"] .select-row             { font-size: 15px; }
+[data-fontsize="large"] .select-row select      { font-size: 14px; }
+[data-fontsize="large"] .settings-text-input    { font-size: 16px; }
+[data-fontsize="large"] .settings-number-input  { font-size: 15px; }
+[data-fontsize="large"] .custom-sound-name      { font-size: 16px; }
+[data-fontsize="large"] .password-change-form input { font-size: 16px; }
+[data-fontsize="large"] .status-bar             { font-size: 14px; }
+[data-fontsize="large"] .status-bar .label,
+[data-fontsize="large"] .status-bar .value      { font-size: 14px; }
+[data-fontsize="large"] .context-menu           { font-size: 16px; }
+[data-fontsize="large"] .online-overlay-title   { font-size: 14px; }
+
+/* X-Large */
+[data-fontsize="x-large"] .settings-hint          { font-size: 15px; }
+[data-fontsize="x-large"] .settings-nav-item      { font-size: 17px; }
+[data-fontsize="x-large"] .settings-nav-group     { font-size: 14px; }
+[data-fontsize="x-large"] .btn-sm                 { font-size: 17px; }
+[data-fontsize="x-large"] .btn-sm.btn-accent,
+[data-fontsize="x-large"] .btn-sm.btn-danger      { font-size: 21px; }
+[data-fontsize="x-large"] .toggle-row,
+[data-fontsize="x-large"] .volume-row,
+[data-fontsize="x-large"] .select-row             { font-size: 17px; }
+[data-fontsize="x-large"] .select-row select      { font-size: 16px; }
+[data-fontsize="x-large"] .settings-text-input    { font-size: 19px; }
+[data-fontsize="x-large"] .settings-number-input  { font-size: 17px; }
+[data-fontsize="x-large"] .custom-sound-name      { font-size: 19px; }
+[data-fontsize="x-large"] .password-change-form input { font-size: 19px; }
+[data-fontsize="x-large"] .status-bar             { font-size: 16px; }
+[data-fontsize="x-large"] .status-bar .label,
+[data-fontsize="x-large"] .status-bar .value      { font-size: 16px; }
+[data-fontsize="x-large"] .context-menu           { font-size: 19px; }
+[data-fontsize="x-large"] .online-overlay-title   { font-size: 16px; }
 
 /* ═══════════════════════════════════════════════════════════
    ONLINE OVERLAY

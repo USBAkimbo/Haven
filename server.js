@@ -796,6 +796,25 @@ app.delete('/api/sounds/:name', (req, res) => {
   } catch { res.status(500).json({ error: 'Failed to delete sound' }); }
 });
 
+app.patch('/api/sounds/:name', (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const user = token ? verifyToken(token) : null;
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!verifyAdminFromDb(user)) return res.status(403).json({ error: 'Admin only' });
+  const oldName = req.params.name;
+  let newName = (req.body.newName || '').trim().replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, ' ').trim();
+  if (!newName || newName.length > 30) return res.status(400).json({ error: 'Invalid new name' });
+  const { getDb } = require('./src/database');
+  try {
+    const row = getDb().prepare('SELECT id FROM custom_sounds WHERE name = ?').get(oldName);
+    if (!row) return res.status(404).json({ error: 'Sound not found' });
+    const existing = getDb().prepare('SELECT id FROM custom_sounds WHERE name = ? AND name != ?').get(newName, oldName);
+    if (existing) return res.status(409).json({ error: 'Name already taken' });
+    getDb().prepare('UPDATE custom_sounds SET name = ? WHERE name = ?').run(newName, oldName);
+    res.json({ ok: true, name: newName });
+  } catch { res.status(500).json({ error: 'Failed to rename sound' }); }
+});
+
 // ── Custom emoji upload (admin only, image, max 256 KB) ──
 const emojiUpload = multer({
   storage: uploadStorage,

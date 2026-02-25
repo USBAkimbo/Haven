@@ -133,14 +133,21 @@ class NotificationManager {
     // Custom uploaded sound (format: "custom:soundname")
     if (sound.startsWith('custom:')) {
       const name = sound.substring(7);
-      // Look up URL from custom sounds select options
-      const sel = document.getElementById('notif-msg-sound') || document.getElementById('notif-mention-sound');
-      if (sel) {
+      // Look up URL from any notification select, or from app's custom sounds cache
+      let url = null;
+      const selIds = ['notif-msg-sound', 'notif-sent-sound', 'notif-mention-sound', 'notif-join-sound', 'notif-leave-sound'];
+      for (const id of selIds) {
+        const sel = document.getElementById(id);
+        if (!sel) continue;
         const opt = sel.querySelector(`option[value="${CSS.escape(sound)}"]`);
-        if (opt && opt.dataset.url) {
-          this._playFile(opt.dataset.url);
-        }
+        if (opt && opt.dataset.url) { url = opt.dataset.url; break; }
       }
+      // Fallback: try app's customSounds array
+      if (!url && window.app?.customSounds) {
+        const cs = window.app.customSounds.find(s => s.name === name);
+        if (cs) url = cs.url;
+      }
+      if (url) this._playFile(url);
       this.volume = origVol;
       return;
     }

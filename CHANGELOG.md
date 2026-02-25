@@ -11,6 +11,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Haven uses [Sema
 
 ---
 
+## [2.3.2] — 2026-02-25
+
+### Added
+- **Sound Manager popout** — new 3-tab Sound Manager (Soundboard, Assign to Events, Manage) with hotkey binding, rename/delete, and event assignment for all 5 notification types.
+- **Soundboard hotkey UX** — sounds now show a clear "Set hotkey" link or a visible "×" remove button instead of an unintuitive confirm dialog.
+
+### Fixed
+- **Kick now permanently revokes channel access** — kicking a user removes them from `channel_members` (and sub-channels), preventing them from simply reconnecting. The kicked user's socket rooms and channel list are also refreshed immediately.
+- **Role auto-assign grants linked channel access** — auto-assigned roles now call `applyRoleChannelAccess()` so that roles with linked channels actually add users to those channels on join/invite.
+- **Font size scaling in sub-menus** — added missing `[data-fontsize]` CSS overrides for settings hints, toggle rows, select rows, inputs, context menus, status bar, and settings nav items across all font size tiers.
+- **Custom sounds populate all notification selects** — all 5 event selects (message, sent, mention, join, leave) now include uploaded custom sounds, not just 2 of them.
+- **Notification sound fallback** — `notifications.js` now searches all selects and the custom sounds array for playback URLs.
+
+---
+
 ## [2.3.1] — 2026-02-25
 
 ### Fixed

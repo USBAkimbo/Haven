@@ -1023,6 +1023,10 @@
               <option value="none">None</option>
             </select>
           </label>
+          <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
+            <button class="btn-sm btn-full btn-accent" id="open-sound-manager-user-btn">🎵 Sound Manager</button>
+            <small class="settings-hint" style="display:block;margin-top:4px">Browse sounds, assign to events, set hotkeys</small>
+          </div>
         </div>
       </div>
 
@@ -1440,19 +1444,68 @@
     </div>
   </div>
 
-  <!-- Sound Management Modal -->
+  <!-- Sound Management Modal (Full Popout) -->
   <div class="modal-overlay" id="sound-modal" style="display:none">
-    <div class="modal" style="max-width:520px">
-      <h3>🔊 Sound Management</h3>
-      <small class="settings-hint" style="display:block;margin-bottom:12px">Upload audio files for custom notification sounds (max 1 MB each)</small>
-      <div class="whitelist-add-row">
-        <input type="text" id="sound-name-input" placeholder="Sound name..." maxlength="30" class="settings-text-input">
-        <input type="file" id="sound-file-input" accept="audio/*" style="max-width:120px;font-size:11px">
-        <button class="btn-sm btn-accent" id="sound-upload-btn">Upload</button>
+    <div class="modal" style="max-width:640px;min-height:420px">
+      <h3>🔊 Sound Manager</h3>
+      <!-- Tabs -->
+      <div class="sound-modal-tabs">
+        <button class="sound-tab active" data-tab="soundboard">🎵 Soundboard</button>
+        <button class="sound-tab" data-tab="assign">🔔 Assign to Events</button>
+        <button class="sound-tab sound-tab-admin" data-tab="manage" style="display:none">⚙️ Manage</button>
       </div>
-      <div id="custom-sounds-list" style="margin-top:12px;">
-        <p class="muted-text">No custom sounds uploaded</p>
+
+      <!-- TAB: Soundboard (all users) -->
+      <div class="sound-tab-content active" id="sound-tab-soundboard">
+        <small class="settings-hint" style="display:block;margin-bottom:8px">Browse & play custom sounds. Set hotkeys to play them anytime.</small>
+        <div class="sound-search-row">
+          <input type="text" id="soundboard-search" placeholder="Search sounds..." class="settings-text-input" style="flex:1">
+        </div>
+        <div id="soundboard-grid" class="soundboard-grid">
+          <p class="muted-text">No sounds available</p>
+        </div>
       </div>
+
+      <!-- TAB: Assign to Events (all users) -->
+      <div class="sound-tab-content" id="sound-tab-assign">
+        <small class="settings-hint" style="display:block;margin-bottom:10px">Choose which sound plays for each event. Custom sounds uploaded by the admin appear here too.</small>
+        <div class="sound-assign-list">
+          <label class="select-row">
+            <span>📨 New Message</span>
+            <select id="assign-msg-sound" class="sound-assign-select"></select>
+          </label>
+          <label class="select-row">
+            <span>📤 Message Sent</span>
+            <select id="assign-sent-sound" class="sound-assign-select"></select>
+          </label>
+          <label class="select-row">
+            <span>📢 @Mention</span>
+            <select id="assign-mention-sound" class="sound-assign-select"></select>
+          </label>
+          <label class="select-row">
+            <span>👋 User Joined</span>
+            <select id="assign-join-sound" class="sound-assign-select"></select>
+          </label>
+          <label class="select-row">
+            <span>🚪 User Left</span>
+            <select id="assign-leave-sound" class="sound-assign-select"></select>
+          </label>
+        </div>
+      </div>
+
+      <!-- TAB: Manage (admin only) -->
+      <div class="sound-tab-content" id="sound-tab-manage">
+        <small class="settings-hint" style="display:block;margin-bottom:12px">Upload audio files for custom sounds (max 1 MB each, mp3/ogg/wav/webm)</small>
+        <div class="whitelist-add-row">
+          <input type="text" id="sound-name-input" placeholder="Sound name..." maxlength="30" class="settings-text-input">
+          <input type="file" id="sound-file-input" accept="audio/*" style="max-width:120px;font-size:11px">
+          <button class="btn-sm btn-accent" id="sound-upload-btn">Upload</button>
+        </div>
+        <div id="custom-sounds-list" style="margin-top:12px;">
+          <p class="muted-text">No custom sounds uploaded</p>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button class="btn-sm" id="close-sound-modal-btn">Close</button>
       </div>
