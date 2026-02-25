@@ -58,7 +58,12 @@ class ServerManager {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
 
-      const res = await fetch(`${url}/api/health`, {
+      // Use only the origin for health checks — if someone stored a URL
+      // like https://example.com/app, we don't want /app/api/health (404).
+      let healthBase;
+      try { healthBase = new URL(url).origin; } catch { healthBase = url; }
+
+      const res = await fetch(`${healthBase}/api/health`, {
         signal: controller.signal,
         mode: 'cors'
       });
