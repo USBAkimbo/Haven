@@ -8,7 +8,7 @@
 
 services:
   traefik:
-    image: traefik:v3.6.9
+    image: ghcr.io/traefik/traefik:3
     container_name: traefik
     restart: unless-stopped
     command:
@@ -32,7 +32,7 @@ services:
       - proxy
 
   haven:
-    image: ghcr.io/ancsemi/haven:2.3.3
+    image: ghcr.io/ancsemi/haven:latest
     container_name: haven
     restart: unless-stopped
     volumes:
@@ -57,7 +57,7 @@ services:
       - traefik.http.routers.haven.service=haven
 
   coturn:
-    image: coturn/coturn:4.9.0-alpine
+    image: ghcr.io/coturn/coturn:4.9
     container_name: coturn
     restart: unless-stopped
     network_mode: host
