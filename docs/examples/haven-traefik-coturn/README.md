@@ -17,8 +17,15 @@
 ## Setup
 - SSH to your server
 - Ensure you have Docker installed (https://get.docker.com)
-- cd to this folder (`docs/examples/haven-traefik-coturn`)
+- Clone this repo and cd to this folder
+```
+git clone https://github.com/ancsemi/Haven
+cd Haven/docs/examples/haven-traefik-coturn
+```
 - Copy `.env.example` to `.env` and adjust the values as you see fit
+```
+cp .env.example .env
+```
 - At a minimum set `DOMAIN` and `ACME_EMAIL` and generate the `TURN_SECRET` using this command
 ```
 openssl rand -hex 32
@@ -32,6 +39,11 @@ docker network create proxy
 docker compose up -d
 ```
 - Once all images have pulled and started, your Haven server should be reachable
+- You may need to wait for a few minutes for Traefik to get the SSL cert
+- Try clearing cookies or trying the site again in an incognito window to load the new cert
+- Once Haven loads, create your admin account and log in
+- You will see the setup wizard and you will likely see `Port 3000 is not reachable from the internet`
+- This is expected as we're using Traefik and this can safely be ignored
 
 ## How It Works
 - Traefik sits in front of Haven and handles all incoming HTTP and HTTPS connections
