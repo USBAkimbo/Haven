@@ -11,6 +11,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Haven uses [Sema
 
 ---
 
+## [2.3.3] — 2026-02-25
+
+### Added
+- **DM & Nickname in member list** — the All Members panel now shows 💬 Message and 🏷️ Set Nickname buttons on every user row, so you can DM or nickname anyone without leaving the list.
+- **Sidebar Members button** — new 👥 button in the sidebar gives all users quick access to the full member list (previously admin-only).
+- **Remove from Channel** — admins and moderators can now remove users from specific channels via the member list.
+- **Admin recovery endpoint** — new `/api/admin-recover` route lets the server owner reclaim admin access using their `.env` credentials if they get locked out.
+
+### Fixed
+- **Member list popup z-index** — action modals (Assign Role, Add/Remove Channel, Ban, Set Nickname) triggered from the All Members panel now correctly appear above the list instead of hiding behind it.
+- **Profile hover popup stuck open** — the translucent bio/profile preview that appears on username hover now reliably fades away when the mouse moves off, using a global mousemove fallback to catch edge cases the old mouseout approach missed.
+- **Role level enforcement on kick/ban/mute** — moderators can no longer kick, ban, or mute users with equal or higher role levels. Admins are always protected from non-admin actions.
+- **Case-insensitive username registration** — usernames are now checked case-insensitively during signup to prevent duplicate accounts with different casing.
+- **Role channel access on signup** — auto-assigned roles now correctly grant linked channel access when a new user registers.
+
+---
+
 ## [2.3.2] — 2026-02-25
 
 ### Added

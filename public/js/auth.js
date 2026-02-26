@@ -105,6 +105,31 @@
     errorEl.style.display = 'none';
   }
 
+  // ── Admin Recovery ────────────────────────────────────
+  document.addEventListener('click', async (e) => {
+    if (e.target.id !== 'admin-recover-btn') return;
+    hideError();
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+    if (!username || !password) return showError('Enter your admin username and password above first');
+    try {
+      const res = await fetch('/api/auth/admin-recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (!res.ok) return showError(data.error || 'Recovery failed');
+      const e2eWrap = await deriveE2EWrappingKey(password);
+      sessionStorage.setItem('haven_e2e_wrap', e2eWrap);
+      localStorage.setItem('haven_token', data.token);
+      localStorage.setItem('haven_user', JSON.stringify(data.user));
+      window.location.href = '/app';
+    } catch {
+      showError('Connection error');
+    }
+  });
+
   // ── Login ─────────────────────────────────────────────
   loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();

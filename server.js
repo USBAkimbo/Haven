@@ -596,6 +596,16 @@ app.post('/api/upload', uploadLimiter, (req, res) => {
   const ban = getDb().prepare('SELECT id FROM bans WHERE user_id = ?').get(user.id);
   if (ban) return res.status(403).json({ error: 'Banned users cannot upload' });
 
+  // Enforce upload_files permission (admin always allowed)
+  if (!verifyAdminFromDb(user)) {
+    const hasPerm = getDb().prepare(`
+      SELECT 1 FROM role_permissions rp
+      JOIN user_roles ur ON rp.role_id = ur.role_id
+      WHERE ur.user_id = ? AND rp.permission = 'upload_files' AND rp.allowed = 1 LIMIT 1
+    `).get(user.id);
+    if (!hasPerm) return res.status(403).json({ error: 'You don\'t have permission to upload files' });
+  }
+
   upload.single('image')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -657,6 +667,16 @@ app.post('/api/upload-file', uploadLimiter, (req, res) => {
   const { getDb } = require('./src/database');
   const ban = getDb().prepare('SELECT id FROM bans WHERE user_id = ?').get(user.id);
   if (ban) return res.status(403).json({ error: 'Banned users cannot upload' });
+
+  // Enforce upload_files permission (admin always allowed)
+  if (!verifyAdminFromDb(user)) {
+    const hasPerm = getDb().prepare(`
+      SELECT 1 FROM role_permissions rp
+      JOIN user_roles ur ON rp.role_id = ur.role_id
+      WHERE ur.user_id = ? AND rp.permission = 'upload_files' AND rp.allowed = 1 LIMIT 1
+    `).get(user.id);
+    if (!hasPerm) return res.status(403).json({ error: 'You don\'t have permission to upload files' });
+  }
 
   fileUpload.single('file')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });

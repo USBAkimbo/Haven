@@ -2482,6 +2482,15 @@ function setupSocketHandlers(io, db) {
         return socket.emit('error-msg', 'You can\'t kick yourself');
       }
 
+      // Level check: can only kick users with a LOWER effective level
+      if (!socket.user.isAdmin) {
+        const myLevel = getUserEffectiveLevel(socket.user.id, kickCh ? kickCh.id : null);
+        const targetLevel = getUserEffectiveLevel(data.userId, kickCh ? kickCh.id : null);
+        if (targetLevel >= myLevel) {
+          return socket.emit('error-msg', 'You can\'t kick a user with equal or higher rank');
+        }
+      }
+
       const code = socket.currentChannel;
       if (!code) return;
 
@@ -2539,8 +2548,9 @@ function setupSocketHandlers(io, db) {
       });
 
       // Scrub messages if requested (skip archived messages)
+      // Non-admins can only scrub channel-scope (prevent channel mods nuking server-wide messages)
       if (data.scrubMessages) {
-        const scrubScope = data.scrubScope === 'server' ? 'server' : 'channel';
+        const scrubScope = (socket.user.isAdmin && data.scrubScope === 'server') ? 'server' : 'channel';
         if (scrubScope === 'channel' && kickCh) {
           db.prepare('DELETE FROM reactions WHERE user_id = ? AND message_id IN (SELECT id FROM messages WHERE channel_id = ? AND is_archived = 0)').run(data.userId, kickCh.id);
           db.prepare('DELETE FROM messages WHERE user_id = ? AND channel_id = ? AND is_archived = 0').run(data.userId, kickCh.id);
@@ -2563,6 +2573,21 @@ function setupSocketHandlers(io, db) {
       if (!isInt(data.userId)) return;
       if (data.userId === socket.user.id) {
         return socket.emit('error-msg', 'You can\'t ban yourself');
+      }
+
+      // Protect admins from being banned by non-admins
+      const targetRow = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(data.userId);
+      if (targetRow && targetRow.is_admin && !socket.user.isAdmin) {
+        return socket.emit('error-msg', 'You cannot ban an admin');
+      }
+
+      // Level check: can only ban users with a LOWER effective level
+      if (!socket.user.isAdmin) {
+        const myLevel = getUserEffectiveLevel(socket.user.id);
+        const targetLevel = getUserEffectiveLevel(data.userId);
+        if (targetLevel >= myLevel) {
+          return socket.emit('error-msg', 'You can\'t ban a user with equal or higher rank');
+        }
       }
 
       const reason = typeof data.reason === 'string' ? data.reason.trim().slice(0, 200) : '';
@@ -2820,6 +2845,15 @@ function setupSocketHandlers(io, db) {
       if (!isInt(data.userId)) return;
       if (data.userId === socket.user.id) {
         return socket.emit('error-msg', 'You can\'t mute yourself');
+      }
+
+      // Level check: can only mute users with a LOWER effective level
+      if (!socket.user.isAdmin) {
+        const myLevel = getUserEffectiveLevel(socket.user.id, muteCh ? muteCh.id : null);
+        const targetLevel = getUserEffectiveLevel(data.userId, muteCh ? muteCh.id : null);
+        if (targetLevel >= myLevel) {
+          return socket.emit('error-msg', 'You can\'t mute a user with equal or higher rank');
+        }
       }
 
       const durationMinutes = isInt(data.duration) && data.duration > 0 && data.duration <= 43200
@@ -3796,6 +3830,66 @@ function setupSocketHandlers(io, db) {
       socket.emit('error-msg', `Invited ${targetUser.username} to #${channel.name}`);
     });
 
+    // ═══════════════ REMOVE FROM CHANNEL ═══════════════════
+
+    socket.on('remove-from-channel', (data, callback) => {
+      const cb = typeof callback === 'function' ? callback : () => {};
+      if (!data || typeof data !== 'object') return cb({ error: 'Invalid data' });
+      const targetUserId = isInt(data.userId) ? data.userId : null;
+      const channelId = isInt(data.channelId) ? data.channelId : null;
+      if (!targetUserId || !channelId) return cb({ error: 'Invalid data' });
+      if (targetUserId === socket.user.id) return cb({ error: 'You can\'t remove yourself' });
+
+      // Permission check: admin or kick_user perm
+      if (!socket.user.isAdmin && !userHasPermission(socket.user.id, 'kick_user', channelId)) {
+        return cb({ error: 'You don\'t have permission to remove users from channels' });
+      }
+
+      // Level check: can only remove users with a LOWER effective level
+      if (!socket.user.isAdmin) {
+        const myLevel = getUserEffectiveLevel(socket.user.id, channelId);
+        const targetLevel = getUserEffectiveLevel(targetUserId, channelId);
+        if (targetLevel >= myLevel) {
+          return cb({ error: 'You can\'t remove a user with equal or higher rank' });
+        }
+      }
+
+      const channel = db.prepare('SELECT * FROM channels WHERE id = ? AND is_dm = 0').get(channelId);
+      if (!channel) return cb({ error: 'Channel not found' });
+
+      const targetUser = db.prepare('SELECT id, username, COALESCE(display_name, username) as displayName FROM users WHERE id = ?').get(targetUserId);
+      if (!targetUser) return cb({ error: 'User not found' });
+
+      // Check target is actually a member
+      const membership = db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, targetUserId);
+      if (!membership) return cb({ error: `${targetUser.username} is not in #${channel.name}` });
+
+      // Remove from channel + sub-channels
+      db.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?').run(channelId, targetUserId);
+      const subs = db.prepare('SELECT id, code FROM channels WHERE parent_channel_id = ?').all(channelId);
+      const delSub = db.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?');
+      subs.forEach(s => delSub.run(s.id, targetUserId));
+
+      // If the target is online, update their socket rooms and channel list
+      const targetSockets = [...io.sockets.sockets.values()].filter(s => s.user && s.user.id === targetUserId);
+      for (const ts of targetSockets) {
+        ts.leave(`channel:${channel.code}`);
+        subs.forEach(sub => ts.leave(`channel:${sub.code}`));
+        ts.emit('channels-list', getEnrichedChannels(targetUserId, ts.user.isAdmin, (room) => ts.join(room)));
+        ts.emit('toast', { message: `You were removed from #${channel.name}`, type: 'warning' });
+      }
+
+      // Remove from channel tracking
+      const channelRoom = channelUsers.get(channel.code);
+      if (channelRoom) {
+        channelRoom.delete(targetUserId);
+        emitOnlineUsers(channel.code);
+      }
+
+      cb({ success: true });
+      socket.emit('error-msg', `Removed ${targetUser.username} from #${channel.name}`);
+    });
+
     // ═══════════════ DIRECT MESSAGES ═══════════════════════
 
     socket.on('start-dm', (data) => {
@@ -4154,10 +4248,13 @@ function setupSocketHandlers(io, db) {
 
     socket.on('get-all-members', (data, callback) => {
       const cb = typeof callback === 'function' ? callback : () => {};
-      if (!socket.user.isAdmin) return cb({ error: 'Admin access required' });
+
+      // All authenticated users can view the member list
+      const isAdmin = socket.user.isAdmin;
+      const canMod = isAdmin || userHasPermission(socket.user.id, 'kick_user') || userHasPermission(socket.user.id, 'ban_user');
 
       try {
-        // All registered users (excluding banned by default, unless requested)
+        // All registered users
         const users = db.prepare(`
           SELECT u.id, u.username, COALESCE(u.display_name, u.username) as displayName,
                  u.is_admin, u.created_at, u.avatar, u.avatar_shape, u.status, u.status_text
@@ -4195,6 +4292,28 @@ function setupSocketHandlers(io, db) {
         const ccRows = db.prepare('SELECT user_id, COUNT(*) as cnt FROM channel_members GROUP BY user_id').all();
         ccRows.forEach(r => { channelCounts[r.user_id] = r.cnt; });
 
+        // Get all channels for admin/mod channel management
+        let allChannels = [];
+        if (canMod) {
+          allChannels = db.prepare('SELECT id, name, code, parent_channel_id FROM channels WHERE is_dm = 0 ORDER BY position, name').all()
+            .map(c => ({ id: c.id, name: c.name, code: c.code, parentId: c.parent_channel_id }));
+        }
+
+        // Get user-channel membership map (for admin/mod to see which channels each user is in)
+        const userChannelMap = {};
+        if (canMod) {
+          const cmRows = db.prepare(`
+            SELECT cm.user_id, cm.channel_id, c.name as channel_name, c.code as channel_code
+            FROM channel_members cm
+            JOIN channels c ON cm.channel_id = c.id
+            WHERE c.is_dm = 0
+          `).all();
+          cmRows.forEach(r => {
+            if (!userChannelMap[r.user_id]) userChannelMap[r.user_id] = [];
+            userChannelMap[r.user_id].push({ id: r.channel_id, name: r.channel_name, code: r.channel_code });
+          });
+        }
+
         const members = users.map(u => ({
           id: u.id,
           username: u.username,
@@ -4204,6 +4323,7 @@ function setupSocketHandlers(io, db) {
           banned: bannedIds.has(u.id),
           roles: userRoles[u.id] || [],
           channels: channelCounts[u.id] || 0,
+          channelList: canMod ? (userChannelMap[u.id] || []) : undefined,
           avatar: u.avatar || null,
           avatarShape: u.avatar_shape || 'circle',
           status: u.status || 'online',
@@ -4211,7 +4331,18 @@ function setupSocketHandlers(io, db) {
           createdAt: u.created_at
         }));
 
-        cb({ members, total: members.length });
+        cb({
+          members,
+          total: members.length,
+          allChannels: canMod ? allChannels : undefined,
+          callerPerms: {
+            isAdmin,
+            canMod,
+            canPromote: isAdmin || userHasPermission(socket.user.id, 'promote_user'),
+            canKick: isAdmin || userHasPermission(socket.user.id, 'kick_user'),
+            canBan: isAdmin || userHasPermission(socket.user.id, 'ban_user'),
+          }
+        });
       } catch (err) {
         console.error('get-all-members error:', err);
         cb({ error: 'Failed to load members' });
@@ -4439,9 +4570,9 @@ function setupSocketHandlers(io, db) {
       const roleId = isInt(data.roleId) ? data.roleId : null;
       if (!userId || !roleId) return;
 
-      // Admins cannot modify their own roles (prevents accidental self-nerf)
-      if (socket.user.isAdmin && userId === socket.user.id) {
-        return cb({ error: 'Admins cannot modify their own roles' });
+      // Cannot modify your own roles (prevents privilege escalation and accidental self-nerf)
+      if (userId === socket.user.id) {
+        return cb({ error: 'You cannot modify your own roles' });
       }
 
       const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(roleId);
@@ -4498,9 +4629,9 @@ function setupSocketHandlers(io, db) {
       const roleId = isInt(data.roleId) ? data.roleId : null;
       if (!userId || !roleId) return;
 
-      // Admins cannot revoke their own roles
-      if (socket.user.isAdmin && userId === socket.user.id) {
-        return socket.emit('error-msg', 'Admins cannot modify their own roles');
+      // Cannot modify your own roles (prevents privilege escalation and accidental self-nerf)
+      if (userId === socket.user.id) {
+        return socket.emit('error-msg', 'You cannot modify your own roles');
       }
 
       // Non-admins can only revoke roles below their own level

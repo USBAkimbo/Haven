@@ -97,7 +97,7 @@ router.post('/register', async (req, res) => {
       }
     }
 
-    const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+    const existing = db.prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?)').get(username);
     if (existing) {
       return res.status(400).json({ error: 'Registration could not be completed' });
     }
@@ -115,6 +115,17 @@ router.post('/register', async (req, res) => {
       const insertRole = db.prepare('INSERT OR IGNORE INTO user_roles (user_id, role_id, channel_id, granted_by) VALUES (?, ?, NULL, NULL)');
       for (const role of autoRoles) {
         insertRole.run(result.lastInsertRowid, role.id);
+        // Grant linked channel access for this role (fixes #79)
+        try {
+          const r = db.prepare('SELECT link_channel_access FROM roles WHERE id = ?').get(role.id);
+          if (r && r.link_channel_access) {
+            const grantChannels = db.prepare(
+              'SELECT channel_id FROM role_channel_access WHERE role_id = ? AND grant_on_promote = 1'
+            ).all(role.id);
+            const ins = db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id) VALUES (?, ?)');
+            for (const ch of grantChannels) ins.run(ch.channel_id, result.lastInsertRowid);
+          }
+        } catch { /* non-critical */ }
       }
     } catch { /* non-critical */ }
 
@@ -303,6 +314,58 @@ function verifyToken(token) {
     return null;
   }
 }
+
+// ── Admin Recovery ──────────────────────────────────────
+// Allows the server owner to reclaim admin access using their .env credentials.
+// This is a last-resort mechanism if the admin gets banned, demoted, or locked out.
+// Requires ADMIN_USERNAME and the admin account's password (verified against DB hash).
+router.post('/admin-recover', authLimiter, async (req, res) => {
+  try {
+    const username = sanitizeString(req.body.username, 20);
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
+
+    // Only the ADMIN_USERNAME from .env can use this endpoint
+    if (username.toLowerCase() !== ADMIN_USERNAME) {
+      return res.status(403).json({ error: 'This endpoint is only available for the server admin account' });
+    }
+
+    const db = getDb();
+    const user = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(username);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Restore admin status
+    db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
+
+    // Remove any active ban on the admin
+    db.prepare('DELETE FROM bans WHERE user_id = ?').run(user.id);
+
+    // Remove any active mute on the admin
+    db.prepare('DELETE FROM mutes WHERE user_id = ?').run(user.id);
+
+    const displayName = user.display_name || user.username;
+    const token = jwt.sign(
+      { id: user.id, username: user.username, isAdmin: true, displayName, pwv: user.password_version || 1 },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    console.log(`🔑 Admin recovery used for "${user.username}" from ${req.ip || 'unknown'}`);
+    res.json({ token, user: { id: user.id, username: user.username, isAdmin: true, displayName } });
+  } catch (err) {
+    console.error('Admin recovery error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 function generateToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });

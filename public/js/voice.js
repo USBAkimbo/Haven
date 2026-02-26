@@ -38,6 +38,7 @@ class VoiceManager {
     this._noiseGateInterval = null;
     this._noiseGateGain = null;
     this._noiseGateAnalyser = null;
+    this._vcDest = null;             // MediaStreamDestination node for mixing soundboard audio into VC
 
     // Screen share quality settings (populated from localStorage)
     const savedRes = localStorage.getItem('haven_screen_res');
@@ -317,6 +318,7 @@ class VoiceManager {
 
       this._noiseGateAnalyser = gateAnalyser;
       this._noiseGateGain = gateGain;
+      this._vcDest = dest;
       this.localStream = dest.stream;   // processed stream → peers
       this._startNoiseGate();
 
@@ -395,6 +397,7 @@ class VoiceManager {
     this.screenSharers.clear();
     this.screenGainNodes.clear();
     this.webcamUsers.clear();
+    this._vcDest = null;
 
     // Close AudioContext to free resources
     if (this.audioCtx) {
@@ -414,6 +417,30 @@ class VoiceManager {
       }
       this._disconnectTimers = {};
     }
+  }
+
+  // Play a soundboard audio file and mix it into the VC stream so other users hear it
+  playSoundToVC(url, localVolume = 0.5) {
+    if (!this.inVoice || !this.audioCtx || !this._vcDest) return false;
+    // Use fetch + decodeAudioData for reliable mixing into VC destination
+    fetch(url).then(r => r.arrayBuffer()).then(buf => {
+      return this.audioCtx.decodeAudioData(buf);
+    }).then(audioBuffer => {
+      const bufferSource = this.audioCtx.createBufferSource();
+      bufferSource.buffer = audioBuffer;
+      // Mix into the VC destination so peers hear it
+      const vcGain = this.audioCtx.createGain();
+      vcGain.gain.value = 0.7;
+      bufferSource.connect(vcGain);
+      vcGain.connect(this._vcDest);
+      // Also play locally for the user's own preview
+      const localGain = this.audioCtx.createGain();
+      localGain.gain.value = localVolume;
+      bufferSource.connect(localGain);
+      localGain.connect(this.audioCtx.destination);
+      bufferSource.start(0);
+    }).catch(() => {});
+    return true;
   }
 
   toggleMute() {

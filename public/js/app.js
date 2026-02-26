@@ -43,6 +43,7 @@ class HavenApp {
     this._noMoreHistory = false;   // true when all history has been loaded
     this._loadingHistory = false;  // prevent concurrent history requests
     this._historyBefore = null;    // set when requesting older messages
+    this._nicknames = JSON.parse(localStorage.getItem('haven_nicknames') || '{}'); // client-side nicknames { oderId: name }
 
     // Slash command definitions for autocomplete
     this.slashCommands = [
@@ -500,7 +501,7 @@ class HavenApp {
         }
         // TTS: speak the message aloud for all listeners
         if (data.message.tts) {
-          this.notifications.speak(`${data.message.username} says: ${data.message.content}`);
+          this.notifications.speak(`${this._getNickname(data.message.user_id, data.message.username)} says: ${data.message.content}`);
         }
       } else {
         this.unreadCounts[data.channelCode] = (this.unreadCounts[data.channelCode] || 0) + 1;
@@ -561,7 +562,7 @@ class HavenApp {
 
     this.socket.on('user-joined', (data) => {
       if (data.channelCode === this.currentChannel) {
-        this._appendSystemMessage(`${data.user.username} joined the channel`);
+        this._appendSystemMessage(`${this._getNickname(data.user.id, data.user.username)} joined the channel`);
         this.notifications.play('join');
       }
     });
@@ -999,7 +1000,7 @@ class HavenApp {
         ? '<p class="muted-text" style="padding:12px">No results found</p>'
         : data.results.map(r => `
           <div class="search-result-item" data-msg-id="${r.id}">
-            <span class="search-result-author" style="color:${this._getUserColor(r.username)}">${this._escapeHtml(r.username)}</span>
+            <span class="search-result-author" style="color:${this._getUserColor(r.username)}">${this._escapeHtml(this._getNickname(r.user_id, r.username))}</span>
             <span class="search-result-time">${this._formatTime(r.created_at)}</span>
             <div class="search-result-content">${this._highlightSearch(this._escapeHtml(r.content), data.query)}</div>
           </div>
@@ -1034,7 +1035,7 @@ class HavenApp {
 
     this.socket.on('new-high-score', (data) => {
       const gameName = this._gamesRegistry?.find(g => g.id === data.game)?.name || data.game;
-      this._showToast(`🏆 ${data.username} set a new ${gameName} record: ${data.score}!`, 'success');
+      this._showToast(`🏆 ${this._getNickname(data.user_id, data.username)} set a new ${gameName} record: ${data.score}!`, 'success');
     });
   }
 
@@ -2459,7 +2460,10 @@ class HavenApp {
       if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
     });
 
-    // View all members button (admin)
+    // View all members buttons (sidebar + admin settings)
+    document.getElementById('sidebar-members-btn').addEventListener('click', () => {
+      this._openAllMembersModal();
+    });
     document.getElementById('view-all-members-btn').addEventListener('click', () => {
       this._openAllMembersModal();
     });
@@ -3782,6 +3786,7 @@ class HavenApp {
     this.customSounds = [];
     this._soundHotkeys = JSON.parse(localStorage.getItem('haven_sound_hotkeys') || '{}'); // { hotkey: soundName }
     this._recordingHotkeyFor = null; // soundName currently recording hotkey
+    this._soundCooldowns = {};       // hotkey → timestamp to prevent key-repeat spam
 
     // Open from admin "Manage Sounds" button
     const openBtn = document.getElementById('open-sound-manager-btn');
@@ -3859,8 +3864,13 @@ class HavenApp {
 
     // Global hotkey listener
     document.addEventListener('keydown', (e) => {
-      // If recording a hotkey for a sound
+      // Ignore key-repeat events (holding a key down)
+      if (e.repeat) return;
+
+      // If recording a hotkey for a sound, wait for a non-modifier key
       if (this._recordingHotkeyFor) {
+        // Let modifier-only presses pass so the user can build combos
+        if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
         e.preventDefault();
         const hk = this._buildHotkeyString(e);
         if (hk === 'Escape') {
@@ -3885,6 +3895,10 @@ class HavenApp {
       const hk = this._buildHotkeyString(e);
       const soundName = this._soundHotkeys[hk];
       if (soundName && this.customSounds) {
+        // Cooldown: prevent rapid re-trigger (300ms minimum between plays)
+        const now = Date.now();
+        if (this._soundCooldowns[hk] && now - this._soundCooldowns[hk] < 300) return;
+        this._soundCooldowns[hk] = now;
         const s = this.customSounds.find(cs => cs.name === soundName);
         if (s) {
           e.preventDefault();
@@ -3927,8 +3941,12 @@ class HavenApp {
 
   _playSoundFile(url) {
     try {
+      const vol = Math.max(0, Math.min(1, this.notifications.volume * this.notifications.volume));
+      // If in voice chat, route through VC so other users hear the sound too
+      if (this.voice && this.voice.playSoundToVC(url, vol)) return;
+      // Fallback: play locally only
       const audio = new Audio(url);
-      audio.volume = Math.max(0, Math.min(1, this.notifications.volume * this.notifications.volume));
+      audio.volume = vol;
       audio.play().catch(() => {});
     } catch { /* audio not available */ }
   }
@@ -4880,7 +4898,7 @@ class HavenApp {
     const nameColor = u.roleColor ? ` style="color:${this._safeColor(u.roleColor)}"` : '';
     return `<div class="online-overlay-user ${statusClass}">
       ${avatar}
-      <span class="online-overlay-username"${nameColor}>${this._escapeHtml(u.username)}</span>
+      <span class="online-overlay-username"${nameColor}>${this._escapeHtml(this._getNickname(u.id, u.username))}</span>
       <span class="online-overlay-status-dot ${statusClass}"></span>
     </div>`;
   }
@@ -5531,7 +5549,7 @@ class HavenApp {
     const channel = this.channels.find(c => c.code === code);
     const isDm = channel && channel.is_dm;
     const displayName = isDm && channel.dm_target
-      ? `@ ${channel.dm_target.username}`
+      ? `@ ${this._getNickname(channel.dm_target.id, channel.dm_target.username)}`
       : channel ? `# ${channel.name}` : code;
 
     document.getElementById('channel-header-name').textContent = displayName;
@@ -6199,7 +6217,7 @@ class HavenApp {
     const allTags = [...new Set(displayList.map(c => assignments[c.code]).filter(Boolean))].sort();
     const hasTags = allTags.length > 0;
 
-    const getDmName = (ch) => ch.dm_target ? ch.dm_target.username : 'Unknown';
+    const getDmName = (ch) => ch.dm_target ? this._getNickname(ch.dm_target.id, ch.dm_target.username) : 'Unknown';
 
     const sortGroup = (arr, mode) => {
       if (mode === 'alpha') {
@@ -6651,7 +6669,7 @@ class HavenApp {
       const dmSortMode = localStorage.getItem('haven_dm_sort_mode') || 'manual';
       const dmOrder = JSON.parse(localStorage.getItem('haven_dm_order') || '[]');
 
-      const getDmName = (ch) => ch.dm_target ? ch.dm_target.username : 'Unknown';
+      const getDmName = (ch) => ch.dm_target ? this._getNickname(ch.dm_target.id, ch.dm_target.username) : 'Unknown';
 
       // Sort DMs by saved order first, then append any new ones
       let sortedDms = [];
@@ -7133,7 +7151,7 @@ class HavenApp {
         ${avatarHtml}
         <div class="message-body">
           <div class="message-header">
-            <span class="message-author" style="color:${color}">${this._escapeHtml(msg.username)}</span>
+            <span class="message-author" style="color:${color}"${this._nicknames[msg.user_id] ? ` title="${this._escapeHtml(msg.username)}"` : ''}>${this._escapeHtml(this._getNickname(msg.user_id, msg.username))}</span>
             ${botBadge}
             ${msgRoleBadge}
             <span class="message-time">${this._formatTime(msg.created_at)}</span>
@@ -7197,7 +7215,7 @@ class HavenApp {
         ${avatarHtml}
         <div class="message-body">
           <div class="message-header">
-            <span class="message-author" style="color:${color}">${this._escapeHtml(username)}</span>
+            <span class="message-author" style="color:${color}"${this._nicknames[userId] ? ` title="${this._escapeHtml(username)}"` : ''}>${this._escapeHtml(this._getNickname(userId, username))}</span>
             ${msgRoleBadge}
             <span class="message-time">${this._formatTime(time)}</span>
             ${pinnedTag}
@@ -7237,7 +7255,7 @@ class HavenApp {
       list.innerHTML = pins.map(p => `
         <div class="pinned-item" data-msg-id="${p.id}">
           <div class="pinned-item-header">
-            <span class="pinned-item-author" style="color:${this._getUserColor(p.username)}">${this._escapeHtml(p.username)}</span>
+            <span class="pinned-item-author" style="color:${this._getUserColor(p.username)}">${this._escapeHtml(this._getNickname(p.user_id, p.username))}</span>
             <span class="pinned-item-time">${this._formatTime(p.created_at)}</span>
           </div>
           <div class="pinned-item-content">${this._formatContent(p.content)}</div>
@@ -7564,7 +7582,7 @@ class HavenApp {
       <div class="user-item${onlineClass}" data-user-id="${u.id}">
         ${avatarHtml}
         ${roleDot}
-        <span class="user-item-name">${this._escapeHtml(u.username)}</span>
+        <span class="user-item-name"${this._nicknames[u.id] ? ` title="${this._escapeHtml(u.username)}"` : ''}>${this._escapeHtml(this._getNickname(u.id, u.username))}</span>
         ${roleBadge}
         ${statusTextHtml}
         ${scoreBadge}
@@ -7580,6 +7598,7 @@ class HavenApp {
     this._closeProfilePopup();
 
     const isSelf = profile.id === this.user.id;
+    const currentNick = !isSelf ? (this._nicknames[profile.id] || '') : '';
     const color = this._getUserColor(profile.username);
     const initial = profile.username.charAt(0).toUpperCase();
     const shapeClass = 'avatar-' + (profile.avatarShape || 'circle');
@@ -7620,9 +7639,10 @@ class HavenApp {
     const joinDate = profile.createdAt ? new Date(profile.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
 
     // Action buttons
+    const nickBtnLabel = currentNick ? '✏️ Edit Nickname' : '🏷️ Set Nickname';
     const actionsHtml = isSelf
       ? `<button class="profile-popup-action-btn profile-edit-btn" id="profile-popup-edit-btn">✏️ Edit Profile</button>`
-      : `<button class="profile-popup-action-btn profile-dm-btn" data-dm-uid="${profile.id}">💬 Message</button>`;
+      : `<button class="profile-popup-action-btn profile-dm-btn" data-dm-uid="${profile.id}">💬 Message</button><button class="profile-popup-action-btn profile-nick-btn" data-nick-uid="${profile.id}" data-nick-uname="${this._escapeHtml(profile.username)}">${nickBtnLabel}</button>`;
 
     const popup = document.createElement('div');
     popup.id = 'profile-popup';
@@ -7637,6 +7657,7 @@ class HavenApp {
       </div>
       <div class="profile-popup-body">
         <div class="profile-popup-names">
+          ${currentNick ? `<span class="profile-popup-nickname">🏷️ ${this._escapeHtml(currentNick)}</span>` : ''}
           <span class="profile-popup-displayname">${this._escapeHtml(profile.displayName)}</span>
           <span class="profile-popup-username">@${this._escapeHtml(profile.username)}</span>
         </div>
@@ -7672,6 +7693,30 @@ class HavenApp {
           }, 200);
         }
       });
+
+      // Robust fallback: track mouse position globally so the popup
+      // always closes when the cursor drifts away from both the
+      // trigger element and the popup itself.
+      const hoverMoveHandler = (e) => {
+        if (!this._isHoverPopup) {
+          document.removeEventListener('mousemove', hoverMoveHandler);
+          return;
+        }
+        const overPopup  = popup.contains(e.target);
+        const anchor     = this._profilePopupAnchor;
+        const overAnchor = anchor && anchor.contains ? anchor.contains(e.target) : false;
+        if (!overPopup && !overAnchor) {
+          clearTimeout(this._hoverCloseTimer);
+          this._hoverCloseTimer = setTimeout(() => {
+            document.removeEventListener('mousemove', hoverMoveHandler);
+            if (this._isHoverPopup) this._closeProfilePopup();
+          }, 300);
+        } else {
+          clearTimeout(this._hoverCloseTimer);
+        }
+      };
+      // Small delay before attaching so initial positioning doesn't trigger close
+      setTimeout(() => document.addEventListener('mousemove', hoverMoveHandler), 100);
     }
 
     // Close button
@@ -7703,6 +7748,17 @@ class HavenApp {
         this.socket.emit('start-dm', { targetUserId: targetId });
         this._closeProfilePopup();
         this._showToast(`Opening DM with ${profile.displayName}…`, 'info');
+      });
+    }
+
+    // Nickname button
+    const nickBtnEl = popup.querySelector('.profile-nick-btn');
+    if (nickBtnEl) {
+      nickBtnEl.addEventListener('click', () => {
+        const uid = parseInt(nickBtnEl.dataset.nickUid);
+        const uname = nickBtnEl.dataset.nickUname;
+        this._closeProfilePopup();
+        this._showNicknameDialog(uid, uname);
       });
     }
 
@@ -7857,7 +7913,7 @@ class HavenApp {
       return `
         <div class="user-item voice-user-item${talking ? ' talking' : ''}" data-user-id="${u.id}"${dotColor ? ` style="--voice-dot-color:${dotColor}"` : ''}>
           <span class="user-dot voice"${dotStyle}></span>
-          <span class="user-item-name">${this._escapeHtml(u.username)}</span>
+          <span class="user-item-name"${this._nicknames[u.id] ? ` title="${this._escapeHtml(u.username)}"` : ''}>${this._escapeHtml(this._getNickname(u.id, u.username))}</span>
           ${streamBadge}
           ${isSelf ? '<span class="you-tag">you</span>' : `<button class="voice-user-menu-btn" data-user-id="${u.id}" data-username="${this._escapeHtml(u.username)}" title="User options">⋯</button>`}
         </div>
@@ -7902,7 +7958,7 @@ class HavenApp {
     const menu = document.createElement('div');
     menu.className = 'voice-user-menu';
     menu.innerHTML = `
-      <div class="voice-user-menu-header">${this._escapeHtml(username)}</div>
+      <div class="voice-user-menu-header">${this._escapeHtml(this._getNickname(userId, username))}</div>
       <div class="voice-user-menu-row">
         <span class="voice-user-menu-label">🔊 Volume</span>
         <input type="range" class="volume-slider voice-user-vol-slider" min="0" max="200" value="${savedVol}" title="Volume: ${savedVol}%">
@@ -8012,9 +8068,104 @@ class HavenApp {
     } catch { /* ignore */ }
   }
 
+  // ── Nicknames (client-side only) ──────────────────────
+
+  _getNickname(userId, fallbackUsername) {
+    if (userId && this._nicknames[userId]) return this._nicknames[userId];
+    return fallbackUsername;
+  }
+
+  _setNickname(userId, nickname) {
+    if (nickname && nickname.trim()) {
+      this._nicknames[userId] = nickname.trim();
+    } else {
+      delete this._nicknames[userId];
+    }
+    localStorage.setItem('haven_nicknames', JSON.stringify(this._nicknames));
+  }
+
+  _showNicknameDialog(userId, currentUsername) {
+    const existing = this._nicknames[userId] || '';
+    const dialog = document.createElement('div');
+    dialog.className = 'modal-overlay';
+    dialog.style.display = 'flex';
+    dialog.style.zIndex = '100002';
+    dialog.innerHTML = `
+      <div class="modal" style="max-width:360px">
+        <h3 style="margin-top:0">Set Nickname</h3>
+        <p class="muted-text" style="margin:0 0 12px">Only you will see this nickname for <strong>${this._escapeHtml(currentUsername)}</strong>.</p>
+        <input type="text" id="nickname-input" class="modal-input" value="${this._escapeHtml(existing)}" placeholder="${this._escapeHtml(currentUsername)}" maxlength="32" style="width:100%;box-sizing:border-box">
+        <div class="modal-actions" style="margin-top:12px">
+          ${existing ? '<button class="btn-sm" id="nickname-clear">Clear</button>' : ''}
+          <button class="btn-sm" id="nickname-cancel">Cancel</button>
+          <button class="btn-sm btn-accent" id="nickname-save">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+    const input = dialog.querySelector('#nickname-input');
+    input.focus();
+    input.select();
+
+    const close = () => dialog.remove();
+    dialog.querySelector('#nickname-cancel').addEventListener('click', close);
+    dialog.addEventListener('click', (e) => { if (e.target === dialog) close(); });
+
+    const clearBtn = dialog.querySelector('#nickname-clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        this._setNickname(userId, null);
+        this._refreshNicknameDisplays();
+        this._showToast('Nickname cleared', 'info');
+        close();
+      });
+    }
+
+    dialog.querySelector('#nickname-save').addEventListener('click', () => {
+      const val = input.value.trim();
+      this._setNickname(userId, val || null);
+      this._refreshNicknameDisplays();
+      if (val) {
+        this._showToast(`Nickname set to "${val}"`, 'success');
+      } else {
+        this._showToast('Nickname cleared', 'info');
+      }
+      close();
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') dialog.querySelector('#nickname-save').click();
+      if (e.key === 'Escape') close();
+    });
+  }
+
+  _refreshNicknameDisplays() {
+    // Re-render sidebar + voice to pick up nickname changes
+    if (this._lastOnlineUsers) this._renderOnlineUsers(this._lastOnlineUsers);
+    if (this._lastVoiceUsers) this._renderVoiceUsers(this._lastVoiceUsers);
+    // Update visible message author names in place
+    document.querySelectorAll('.message, .message-compact').forEach(el => {
+      const uid = parseInt(el.dataset.userId);
+      const realName = el.dataset.username;
+      if (uid && realName) {
+        const nick = this._getNickname(uid, realName);
+        const authorEl = el.querySelector('.message-author');
+        if (authorEl) {
+          authorEl.textContent = nick;
+          authorEl.title = nick !== realName ? realName : '';
+        }
+      }
+    });
+    // Close profile popup since data changed
+    this._closeProfilePopup();
+  }
+
   _showTyping(username) {
     const el = document.getElementById('typing-indicator');
-    el.textContent = `${username} is typing...`;
+    // Look up nickname by username from online users
+    const onlineUser = this._lastOnlineUsers && this._lastOnlineUsers.find(u => u.username === username);
+    const display = onlineUser ? this._getNickname(onlineUser.id, username) : username;
+    el.textContent = `${display} is typing...`;
     clearTimeout(this.typingTimeout);
     this.typingTimeout = setTimeout(() => { el.textContent = ''; }, 3000);
   }
@@ -11272,7 +11423,7 @@ class HavenApp {
     return `
       <div class="reply-banner" data-reply-msg-id="${replyCtx.id}">
         <span class="reply-line" style="background:${color}"></span>
-        <span class="reply-author" style="color:${color}">${this._escapeHtml(replyCtx.username)}</span>
+        <span class="reply-author" style="color:${color}">${this._escapeHtml(this._getNickname(replyCtx.user_id, replyCtx.username))}</span>
         <span class="reply-preview">${this._escapeHtml(previewText)}</span>
       </div>
     `;
@@ -11438,6 +11589,7 @@ class HavenApp {
     document.getElementById('admin-action-duration').value = '10';
     document.getElementById('admin-scrub-scope').value = 'channel';
     modal.style.display = 'flex';
+    modal.style.zIndex = '100002';
   }
 
   _confirmTransferAdmin(userId, username) {
@@ -12092,7 +12244,7 @@ class HavenApp {
   }
 
   // ═══════════════════════════════════════════════════════
-  // ADMIN MEMBER LIST
+  // MEMBER LIST (universal access, role-dependent actions)
   // ═══════════════════════════════════════════════════════
 
   _openAllMembersModal() {
@@ -12110,6 +12262,8 @@ class HavenApp {
         return;
       }
       this._allMembersData = res.members || [];
+      this._allMembersChannels = res.allChannels || [];
+      this._allMembersPerms = res.callerPerms || {};
       document.getElementById('all-members-count').textContent = `(${res.total})`;
       this._renderAllMembers(this._allMembersData);
     });
@@ -12132,6 +12286,7 @@ class HavenApp {
       filtered = filtered.filter(m =>
         m.username.toLowerCase().includes(query) ||
         m.displayName.toLowerCase().includes(query) ||
+        (this._nicknames[m.id] || '').toLowerCase().includes(query) ||
         m.roles.some(r => r.name.toLowerCase().includes(query))
       );
     }
@@ -12146,6 +12301,9 @@ class HavenApp {
       list.innerHTML = '<p class="muted-text" style="text-align:center;padding:20px">No members found</p>';
       return;
     }
+
+    const perms = this._allMembersPerms || {};
+    const isSelf = (id) => id === this.user.id;
 
     list.innerHTML = members.map(m => {
       const rolesHtml = m.roles.map(r =>
@@ -12165,6 +12323,32 @@ class HavenApp {
         ? `<img src="${this._escapeHtml(avatarUrl)}" class="aml-avatar" style="${avatarShape}" alt="">`
         : `<div class="aml-avatar aml-avatar-default" style="${avatarShape}">${this._escapeHtml(m.displayName.charAt(0).toUpperCase())}</div>`;
 
+      // Build action buttons based on caller permissions (never show for self)
+      let actionsHtml = '';
+      if (!isSelf(m.id)) {
+        let btns = '';
+        // Always-available: DM and Nickname
+        btns += `<button class="aml-action-btn aml-btn-dm" data-uid="${m.id}" data-uname="${this._escapeHtml(m.displayName)}" title="Send Message">💬</button>`;
+        btns += `<button class="aml-action-btn aml-btn-nick" data-uid="${m.id}" data-uname="${this._escapeHtml(m.username)}" title="Set Nickname">🏷️</button>`;
+        if (perms.canPromote && !m.banned) {
+          btns += `<button class="aml-action-btn aml-btn-role" data-uid="${m.id}" data-uname="${this._escapeHtml(m.username)}" title="Assign Role">👑</button>`;
+        }
+        if (perms.canKick && !m.banned) {
+          btns += `<button class="aml-action-btn aml-btn-addch" data-uid="${m.id}" data-uname="${this._escapeHtml(m.username)}" title="Add to Channel">➕</button>`;
+          btns += `<button class="aml-action-btn aml-btn-remch" data-uid="${m.id}" data-uname="${this._escapeHtml(m.username)}" title="Remove from Channel">➖</button>`;
+        }
+        if (perms.canBan && !m.banned) {
+          btns += `<button class="aml-action-btn aml-btn-ban" data-uid="${m.id}" data-uname="${this._escapeHtml(m.username)}" title="Ban from Server">⛔</button>`;
+        }
+        if (perms.isAdmin && m.banned) {
+          btns += `<button class="aml-action-btn aml-btn-unban" data-uid="${m.id}" data-uname="${this._escapeHtml(m.username)}" title="Unban">✅</button>`;
+        }
+        if (perms.isAdmin && !m.isAdmin) {
+          btns += `<button class="aml-action-btn aml-btn-delete" data-uid="${m.id}" data-uname="${this._escapeHtml(m.username)}" title="Delete from Server">🗑️</button>`;
+        }
+        actionsHtml = `<div class="aml-actions">${btns}</div>`;
+      }
+
       return `<div class="aml-member-row">
         <div class="aml-member-left">
           <div class="aml-avatar-wrap">
@@ -12173,7 +12357,7 @@ class HavenApp {
           </div>
           <div class="aml-member-info">
             <div class="aml-member-name">
-              ${this._escapeHtml(m.displayName)}${m.username !== m.displayName ? ` <span class="aml-login-name">@${this._escapeHtml(m.username)}</span>` : ''}
+              ${this._escapeHtml(this._getNickname(m.id, m.displayName))}${m.username !== m.displayName ? ` <span class="aml-login-name">@${this._escapeHtml(m.username)}</span>` : ''}${this._nicknames[m.id] ? ` <span class="aml-login-name">(${this._escapeHtml(m.displayName)})</span>` : ''}
               ${adminBadge}${bannedBadge}${newBadge}
             </div>
             <div class="aml-member-meta">
@@ -12183,8 +12367,198 @@ class HavenApp {
             </div>
           </div>
         </div>
+        ${actionsHtml}
       </div>`;
     }).join('');
+
+    // Bind action buttons
+    this._bindMemberListActions(list);
+  }
+
+  _bindMemberListActions(container) {
+    const self = this;
+
+    // DM (Send Message)
+    container.querySelectorAll('.aml-btn-dm').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const uid = parseInt(btn.dataset.uid);
+        self.socket.emit('start-dm', { targetUserId: uid });
+        document.getElementById('all-members-modal').style.display = 'none';
+        self._showToast(`Opening DM with ${btn.dataset.uname}…`, 'info');
+      });
+    });
+
+    // Set Nickname
+    container.querySelectorAll('.aml-btn-nick').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const uid = parseInt(btn.dataset.uid);
+        const uname = btn.dataset.uname;
+        self._showNicknameDialog(uid, uname);
+      });
+    });
+
+    // Assign Role
+    container.querySelectorAll('.aml-btn-role').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const uid = parseInt(btn.dataset.uid);
+        const uname = btn.dataset.uname;
+        self._loadRoles(() => self._openAssignRoleModal(uid, uname));
+      });
+    });
+
+    // Add to Channel
+    container.querySelectorAll('.aml-btn-addch').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const uid = parseInt(btn.dataset.uid);
+        const uname = btn.dataset.uname;
+        self._openMemberChannelPicker(uid, uname, 'add');
+      });
+    });
+
+    // Remove from Channel
+    container.querySelectorAll('.aml-btn-remch').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const uid = parseInt(btn.dataset.uid);
+        const uname = btn.dataset.uname;
+        self._openMemberChannelPicker(uid, uname, 'remove');
+      });
+    });
+
+    // Ban
+    container.querySelectorAll('.aml-btn-ban').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const uid = parseInt(btn.dataset.uid);
+        const uname = btn.dataset.uname;
+        self._showAdminActionModal('ban', uid, uname);
+      });
+    });
+
+    // Unban
+    container.querySelectorAll('.aml-btn-unban').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const uid = parseInt(btn.dataset.uid);
+        self.socket.emit('unban-user', { userId: uid });
+        self._showToast('User unbanned', 'success');
+        setTimeout(() => self._openAllMembersModal(), 500);
+      });
+    });
+
+    // Delete
+    container.querySelectorAll('.aml-btn-delete').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const uid = parseInt(btn.dataset.uid);
+        const uname = btn.dataset.uname;
+        self._showAdminActionModal('delete-user', uid, uname);
+      });
+    });
+  }
+
+  _openMemberChannelPicker(userId, username, mode) {
+    // mode: 'add' or 'remove'
+    const member = (this._allMembersData || []).find(m => m.id === userId);
+    const allChannels = this._allMembersChannels || [];
+    const memberChannelIds = new Set((member && member.channelList ? member.channelList : []).map(c => c.id));
+
+    let channels;
+    if (mode === 'add') {
+      // Show channels user is NOT in (top-level only for clarity)
+      channels = allChannels.filter(c => !memberChannelIds.has(c.id) && !c.parentId);
+    } else {
+      // Show channels user IS in
+      channels = (member && member.channelList ? member.channelList : []);
+    }
+
+    if (channels.length === 0) {
+      this._showToast(mode === 'add' ? `${username} is already in all channels` : `${username} isn't in any channels`, 'info');
+      return;
+    }
+
+    // Build a picker overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay aml-channel-picker-overlay';
+    overlay.style.display = 'flex';
+    overlay.style.zIndex = '100002';
+
+    const title = mode === 'add'
+      ? `Add ${this._escapeHtml(username)} to Channel`
+      : `Remove ${this._escapeHtml(username)} from Channel`;
+
+    const allCheckboxId = `aml-ch-all-${userId}-${mode}`;
+
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:380px;max-height:60vh;display:flex;flex-direction:column">
+        <h4>${title}</h4>
+        <div style="margin-bottom:8px">
+          <label class="toggle-row" style="font-size:13px;gap:6px;cursor:pointer">
+            <input type="checkbox" id="${allCheckboxId}">
+            <span>Select All</span>
+          </label>
+        </div>
+        <div class="aml-channel-list" style="overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:2px">
+          ${channels.map(c => `
+            <label class="aml-channel-row" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--radius-sm);cursor:pointer">
+              <input type="checkbox" class="aml-ch-check" value="${c.id}" data-name="${this._escapeHtml(c.name)}">
+              <span style="font-size:13px">#${this._escapeHtml(c.name)}</span>
+            </label>
+          `).join('')}
+        </div>
+        <div class="modal-actions" style="margin-top:8px">
+          <button class="btn-sm aml-ch-cancel">Cancel</button>
+          <button class="btn-sm btn-accent aml-ch-confirm">${mode === 'add' ? 'Add' : 'Remove'}</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Select All checkbox
+    const allCheck = overlay.querySelector(`#${allCheckboxId}`);
+    const checks = overlay.querySelectorAll('.aml-ch-check');
+    allCheck.addEventListener('change', () => {
+      checks.forEach(cb => { cb.checked = allCheck.checked; });
+    });
+
+    // Close
+    overlay.querySelector('.aml-ch-cancel').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    // Confirm
+    overlay.querySelector('.aml-ch-confirm').addEventListener('click', () => {
+      const selected = [...checks].filter(cb => cb.checked).map(cb => ({
+        id: parseInt(cb.value),
+        name: cb.dataset.name
+      }));
+      if (selected.length === 0) {
+        this._showToast('Select at least one channel', 'warning');
+        return;
+      }
+      overlay.remove();
+
+      let completed = 0;
+      selected.forEach(ch => {
+        if (mode === 'add') {
+          this.socket.emit('invite-to-channel', { targetUserId: userId, channelId: ch.id });
+        } else {
+          this.socket.emit('remove-from-channel', { userId, channelId: ch.id }, (res) => {
+            if (res && res.error) this._showToast(res.error, 'error');
+          });
+        }
+        completed++;
+      });
+
+      const action = mode === 'add' ? 'Added to' : 'Removed from';
+      this._showToast(`${action} ${selected.length} channel${selected.length > 1 ? 's' : ''}`, 'success');
+      // Refresh after a short delay
+      setTimeout(() => this._openAllMembersModal(), 800);
+    });
   }
 
   // ═══════════════════════════════════════════════════════
@@ -14062,6 +14436,7 @@ class HavenApp {
     });
     scopeSel.innerHTML = scopeHtml;
     modal.style.display = 'flex';
+    modal.style.zIndex = '100002';
   }
 
   // ═══════════════════════════════════════════════════════

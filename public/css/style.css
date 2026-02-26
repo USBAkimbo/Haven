@@ -1099,6 +1099,40 @@
   animation: gospel-radiance 10s ease-in-out infinite;
 }
 
+/* ─── THEME: Midnight Purple ────────────────────────────── */
+[data-theme="midnightpurple"] {
+  --bg-primary:    #0d0a1a;
+  --bg-secondary:  #140f29;
+  --bg-tertiary:   #1a1433;
+  --bg-card:       #1e1840;
+  --bg-input:      #1a1433;
+  --bg-hover:      rgba(138, 92, 246, 0.12);
+  --text-primary:  #e8e0f0;
+  --text-secondary:#a899c4;
+  --text-muted:    #6b5a8a;
+  --accent:        #8a5cf6;
+  --accent-hover:  #7c4deb;
+  --border:        rgba(138, 92, 246, 0.15);
+  --success:       #4ade80;
+  --danger:        #f43f5e;
+  --warning:       #fbbf24;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+}
+[data-theme="midnightpurple"] .brand-text { color: #8a5cf6; text-shadow: 0 0 12px rgba(138, 92, 246, 0.4); }
+[data-theme="midnightpurple"] .server-icon.home { background: linear-gradient(135deg, #4c1d95, #8a5cf6); box-shadow: 0 0 10px rgba(138, 92, 246, 0.3); }
+[data-theme="midnightpurple"] .channel-item.active::before { background: #8a5cf6; box-shadow: 0 0 6px rgba(138, 92, 246, 0.5); }
+[data-theme="midnightpurple"] .btn-send { box-shadow: 0 0 8px rgba(138, 92, 246, 0.3); }
+[data-theme="midnightpurple"] .message-avatar, [data-theme="midnightpurple"] .message-avatar-img { border: 1px solid rgba(138, 92, 246, 0.25); }
+[data-theme="midnightpurple"] .channel-badge { background: #8a5cf6; color: #fff; }
+[data-theme="midnightpurple"] .inline-code { color: #a78bfa; background: rgba(138, 92, 246, 0.1); }
+[data-theme="midnightpurple"] .mention { background: rgba(138, 92, 246, 0.15); color: #a78bfa; }
+[data-theme="midnightpurple"] .reaction-badge.own { background: rgba(138, 92, 246, 0.2); border-color: #8a5cf6; }
+[data-theme="midnightpurple"] .reaction-badge:hover { background: rgba(138, 92, 246, 0.15); border-color: #8a5cf6; }
+[data-theme="midnightpurple"] ::selection { background: rgba(138, 92, 246, 0.3); }
+[data-theme="midnightpurple"] ::-webkit-scrollbar-thumb { background: rgba(138, 92, 246, 0.3) !important; }
+[data-theme="midnightpurple"] ::-webkit-scrollbar-thumb:hover { background: rgba(138, 92, 246, 0.5) !important; }
+
 /* ─── THEME: CRT ───────────────────────────────────────── */
 [data-theme="crt"] {
   --bg-primary:    #080808;
@@ -4283,6 +4317,14 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   line-height: 1.2;
 }
 
+.profile-popup-nickname {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1.2;
+  margin-bottom: 2px;
+}
+
 .profile-popup-username {
   font-size: 13px;
   color: var(--text-muted);
@@ -4394,6 +4436,14 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   border: 1px solid var(--border-light) !important;
 }
 .profile-edit-btn:hover { background: var(--bg-hover); }
+
+.profile-nick-btn {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  margin-top: 6px;
+  border: 1px solid var(--border-light) !important;
+}
+.profile-nick-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 /* ── Edit Profile Modal ──────────────────────────── */
 .edit-profile-modal-box {
@@ -7530,6 +7580,42 @@ input[type="range"]:not(.rgb-slider)::-moz-range-track {
   font-size: 10px;
   color: var(--text-muted);
   opacity: 0.7;
+}
+
+/* ── Member List Action Buttons ── */
+.aml-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.aml-member-row:hover .aml-actions { opacity: 1; }
+
+.aml-action-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  transition: background 0.12s;
+}
+.aml-action-btn:hover { background: var(--bg-hover); }
+.aml-btn-ban:hover,
+.aml-btn-delete:hover { background: rgba(244, 63, 94, 0.15); }
+.aml-btn-unban:hover { background: rgba(74, 222, 128, 0.15); }
+
+/* ── Channel Picker (add/remove) ── */
+.aml-channel-row:hover {
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
 }
 
 .bans-list {
